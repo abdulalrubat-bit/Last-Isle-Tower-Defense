@@ -111,8 +111,10 @@ npm i playwright && node tools/sim.mjs          # the summary table above
 node tools/sim.mjs --full                       # every run, itemised
 node tools/sim.mjs --level deepwood --runs 3    # one map, repeated
 
-# Rebuild assets/ from original art (towers, enemies, UI — no backgrounds)
-python3 tools/build-assets.py ~/art/tower-defence-pack
+# Replace art (towers, enemies, UI — no backgrounds)
+python3 tools/build-assets.py --list ~/art        # what filenames are accepted
+python3 tools/build-assets.py ~/art --dry-run     # what would change
+python3 tools/build-assets.py ~/art               # do it
 
 # After ANY change to shipped files
 python3 tools/stamp-sw.py
@@ -124,15 +126,86 @@ board cleanly. Then run the sim and set `hp` and `padGap` from what it reports
 — those two are the difficulty dial, and guessing them is how levels 4–6 first
 came out as walls.
 
+## Dropping in the real art
+
+Every sprite the game ships was *recovered* from the pack's JPEGs by keying out
+the black background. That works, but it is inferred: JPEG had no alpha to
+begin with, so the edges are a guess. Real art with a real alpha channel is a
+straight upgrade, and it needs no code change at all.
+
+**You can do this a few files at a time.** Anything you do not supply keeps the
+version already in the game, so there is no all-or-nothing drop and nothing to
+finish in one sitting.
+
+1. **Make a folder** anywhere — `~/art`, say. It does not go in the repo.
+
+2. **See what it accepts**, which is also the shopping list:
+
+   ```sh
+   python3 tools/build-assets.py --list ~/art
+   ```
+
+   Each row shows one output file and the filenames that produce it. Both
+   spellings work — the pack's (`tower_lightning.png`) and the game's
+   (`tower_bolt.png`) — so you never have to remember which is which.
+
+3. **Export into that folder.** The rules:
+   - **PNG with a real alpha channel.** This is the whole point; alpha is used
+     exactly as given and nothing is inferred. Art delivered flat on black
+     still works — it gets keyed — but you gain nothing over what is there now.
+   - **Any extension is fine.** The name before the dot is what matters.
+   - **Bigger than the cap is fine**, it downscales. Smaller gets upscaled and
+     will look soft, so treat the cap in the `--list` output as a minimum.
+   - **No padding.** Trim to the artwork; the game positions by the image box.
+
+4. **Check before committing to it:**
+
+   ```sh
+   python3 tools/build-assets.py ~/art --dry-run
+   ```
+
+   Every line ends `(alpha)` or `(keyed)`. `(alpha)` means it used your real
+   transparency. `(keyed)` means that file had none and it fell back to keying
+   black — if you expected alpha there, the export is flattened, so fix it and
+   re-run. It also lists what it is leaving alone.
+
+5. **Run it, then stamp the service worker:**
+
+   ```sh
+   python3 tools/build-assets.py ~/art
+   python3 tools/stamp-sw.py
+   ```
+
+   The stamp is not optional. `sw.js` caches by a hash of the shipped bytes,
+   and without a re-stamp anyone with the game installed keeps the old art
+   forever, on a device you cannot reach.
+
+6. **Look at it**, then commit `assets/` and `sw.js` together.
+
+### If you are drawing new art rather than using the pack
+
+Same steps — name the files by the **output** name from `--list`. Two worth
+knowing about:
+
+- `hdr_victory.png` currently reads "ACHIEVEMENT", because that is the closest
+  thing to a celebratory header in the pack. It wants a real one.
+- `enemy_run_0.png` … `enemy_run_9.png` are the only enemy art in the game.
+  Grunt, runner, brute and boss are all that one set at different scales and
+  tints. A second set is the single biggest visual upgrade available, and it
+  needs a code change as well as art — say the word and I will wire it up.
+
+To add an asset that does not exist yet, add a row to `tools/assets.json`
+(`"source-name.png": ["output-name.png", cap]`) and reference the output name
+from `index.html` or `game.js`.
+
 ## Known gaps
 
 Deliberate omissions, not oversights:
 
 - **The original art has not been dropped in yet.** Every sprite is *recovered*
   from the pack's JPEGs by keying the black surround — good, but inferred.
-  Export the originals as PNGs with alpha into one folder and run
-  `tools/build-assets.py`; nothing in the game changes, everything gets
-  sharper. This no longer touches backgrounds, only towers, enemies and UI.
+  See **Dropping in the real art** above. This no longer touches backgrounds,
+  only towers, enemies and UI.
 - **The victory header reads "ACHIEVEMENT"** — the closest thing to a
   celebratory header the pack has. It wants a real one.
 - **One enemy sprite set.** Grunt, runner, brute and boss are the same ten run

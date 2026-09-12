@@ -36,6 +36,8 @@ ap.add_argument('source', help='directory of original art')
 ap.add_argument('--out', default=os.path.join(HERE, '..', 'assets'))
 ap.add_argument('--manifest', default=os.path.join(HERE, 'assets.json'))
 ap.add_argument('--dry-run', action='store_true')
+ap.add_argument('--list', action='store_true',
+                help='print what filenames each output accepts, and stop')
 a = ap.parse_args()
 
 spec = json.load(open(a.manifest))
@@ -68,20 +70,34 @@ def fit(im, cap):
     s = cap / max(w, h)
     return im.resize((max(1, round(w * s)), max(1, round(h * s))), Image.LANCZOS)
 
-def find(name):
-    p = os.path.join(a.source, name)
-    if os.path.exists(p):
-        return p
-    stem = os.path.splitext(name)[0]
-    for f in os.listdir(a.source):
-        if os.path.splitext(f)[0] == stem:
+def find(src_name, out_name):
+    """Accept either the original pack's filename or the game's own.
+
+    You should not have to remember that the game's tower_bolt.png came from
+    the pack's tower_lightning.png. Either spelling works, and so does any
+    extension: hand it a .psd export named tower_bolt.png and it is found.
+    """
+    want = {os.path.splitext(src_name)[0], os.path.splitext(out_name)[0]}
+    for f in sorted(os.listdir(a.source)):
+        if os.path.splitext(f)[0] in want:
             return os.path.join(a.source, f)
     return None
 
 seen, total, missing = {}, 0, []
 
+if a.list:
+    print(f'{"output file":<22} {"accepts either of":<46} cap')
+    for group in ('opaque', 'sprite'):
+        for src, (dst, cap) in spec[group].items():
+            names = dst if src == dst else f'{src}  or  {dst}'
+            print(f'{dst:<22} {names:<46} {cap}')
+    print('\nAny extension works (.png .psd export .webp ...). Alpha is used '
+          'as-is;\nart flat on black is keyed. Drop in as few or as many as '
+          'you like:\nanything absent keeps the file the game already ships.')
+    sys.exit(0)
+
 for src, (dst, cap) in spec['opaque'].items():
-    p = find(src)
+    p = find(src, dst)
     if not p:
         missing.append(src); continue
     im = fit(Image.open(p).convert('RGB'), cap)
@@ -93,7 +109,7 @@ for src, (dst, cap) in spec['opaque'].items():
     print(f'{n:>8}  {str(im.size):<12} {dst}  (opaque)')
 
 for src, (dst, cap) in spec['sprite'].items():
-    p = find(src)
+    p = find(src, dst)
     if not p:
         missing.append(src); continue
     digest = hashlib.md5(open(p, 'rb').read()).hexdigest()
@@ -116,9 +132,17 @@ for src, (dst, cap) in spec['sprite'].items():
     total += n
     print(f'{n:>8}  {str(im.size):<12} {dst}  ({"alpha" if has_alpha else "keyed"})')
 
-print(f'\ntotal: {total:,} bytes ({total / 1048576:.2f} MB)')
+done = len(spec['opaque']) + len(spec['sprite']) - len(missing)
+print(f'\nreplaced {done} file(s), {total:,} bytes ({total / 1048576:.2f} MB)')
 if missing:
-    print(f'MISSING from {a.source} ({len(missing)}):')
+    # Not an error. Dropping in five files and leaving the other forty as they
+    # are is the normal way to do this, so the run succeeds and says what it
+    # left alone.
+    print(f'\nkept the shipped version of {len(missing)} file(s) not found '
+          f'in {a.source}:')
     for m in missing:
         print('  ' + m)
-    sys.exit(1)
+    print('\nRun with --list to see every filename this accepts.')
+if not a.dry_run and done:
+    print('\nNow: python3 tools/stamp-sw.py   (or the update will not reach '
+          'installed players)')
