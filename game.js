@@ -13,56 +13,59 @@
  */
 'use strict';
 
-/* ---------------------------------------------------------------- map ---- */
+/* ------------------------------------------------------------- campaign --- */
 
 const MAP_W = 1536, MAP_H = 864;
 
-// Centreline traced from the road in map1.jpg by colour-keying the sand, then
-// verified: every sampled point along it lands on road. Do not hand-nudge
-// these without re-checking against the art.
-const PATH = [
-  [0,680],[210,680],[380,678],[452,664],[496,600],[528,540],[556,480],
-  [596,432],[648,406],[706,414],[752,446],[800,486],[852,474],[900,462],
-  [936,424],[968,362],[1000,318],[1032,276],[1064,226],[1120,204],
-  [1240,202],[1340,208],[1400,236],[1464,264],[1536,272]
+// A level is data. The control points are sampled into the road the player
+// sees AND the line the enemies walk — one array, so they cannot disagree.
+// Build pads are derived from that road at a fixed offset rather than listed,
+// which is what stopped them drifting to a distance that broke the balance.
+// See map.js. No level here costs a single byte of image.
+//
+// `hp` ramps the campaign. Path length and pad count already vary the
+// difficulty a lot — a longer road means more time in range, so it plays
+// easier — so these are set from what tools/sim.mjs measures, not by eye.
+const LEVELS = [
+  { id:'landing', name:'FIRST LANDING', palette:'island', hp:1.00, seed:20260912,
+    props:300, decor:620,
+    control:[[-40,700],[240,690],[430,640],[520,500],[660,430],[860,470],
+             [980,380],[1010,240],[1200,190],[1400,230],[1580,300]],
+    water:[{x:1210,y:585,rx:185,ry:80,rot:-.08}] },
+
+  { id:'palmrun', name:'PALM RUN', palette:'island', hp:1.06, seed:5514,
+    props:320, decor:640, padGap:170,
+    control:[[-40,240],[210,220],[390,330],[430,540],[620,660],[830,600],
+             [890,420],[1060,300],[1270,330],[1400,520],[1580,620]],
+    water:[{x:250,y:660,rx:150,ry:66,rot:.12}] },
+
+  { id:'deepwood', name:'DEEPWOOD', palette:'forest', hp:1.07, seed:7712,
+    props:340, decor:640, padGap:180,
+    control:[[-40,180],[220,200],[400,320],[420,520],[600,640],[820,600],
+             [900,430],[1080,330],[1290,380],[1420,560],[1580,660]],
+    water:[{x:290,y:700,rx:145,ry:66,rot:.1},{x:1190,y:150,rx:118,ry:56,rot:-.2}] },
+
+  { id:'millpond', name:'MILLPOND', palette:'forest', hp:1.05, seed:41009,
+    props:300, decor:600, padGap:186,
+    control:[[-40,620],[220,640],[420,560],[500,380],[700,300],[900,380],
+             [1000,560],[1180,640],[1360,560],[1460,380],[1580,300]],
+    water:[{x:700,y:640,rx:175,ry:76,rot:0},{x:1180,y:200,rx:130,ry:60,rot:.15}] },
+
+  { id:'frostgate', name:'FROSTGATE', palette:'snow', hp:1.07, seed:33144,
+    props:260, decor:520, padGap:190,
+    control:[[-40,430],[200,440],[340,300],[540,250],[700,360],[760,570],
+             [950,660],[1150,590],[1240,400],[1420,330],[1580,380]],
+    water:[{x:520,y:700,rx:160,ry:70,rot:.05}] },
+
+  { id:'longroad', name:'THE LONG ROAD', palette:'snow', hp:1.11, seed:88231,
+    props:280, decor:560, padGap:216,
+    control:[[-40,160],[180,180],[300,360],[240,560],[380,700],[620,700],
+             [740,540],[700,340],[860,220],[1080,240],[1180,420],[1120,620],
+             [1300,720],[1480,620],[1580,440]],
+    water:[{x:980,y:700,rx:140,ry:62,rot:-.1}] },
 ];
 
-// Build pads: on grass, clear of the road, the huts and the pond, and hugging
-// the verge — 66 to 118px off the centreline. That distance is the whole
-// balance. An earlier set sat 92-168px out, where a 190-range tower covers
-// only a ~160px sliver of road and lands two shots on a passing enemy; the
-// game was unwinnable on hard for geometric reasons, not difficulty ones.
-// These eleven cover 96% of the route at base range.
-const PADS = [
-  [70,588],[286,588],[418,564],[526,744],[610,600],[706,324],
-  [886,288],[1054,120],[1078,384],[1318,300],[1390,120]
-];
-
-// Cumulative arc length, so a point lookup is a binary search rather than a
-// walk from the start of the path.
-const SEG = [];
-let PATH_LEN = 0;
-for (let i = 0; i < PATH.length - 1; i++) {
-  const [ax, ay] = PATH[i], [bx, by] = PATH[i + 1];
-  const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy);
-  SEG.push({ ax, ay, dx, dy, len, start: PATH_LEN, angle: Math.atan2(dy, dx) });
-  PATH_LEN += len;
-}
-
-function pointAt(dist) {
-  if (dist <= 0) { const s = SEG[0]; return { x: s.ax, y: s.ay, angle: s.angle }; }
-  if (dist >= PATH_LEN) {
-    const s = SEG[SEG.length - 1];
-    return { x: s.ax + s.dx, y: s.ay + s.dy, angle: s.angle };
-  }
-  let lo = 0, hi = SEG.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (SEG[mid].start <= dist) lo = mid; else hi = mid - 1;
-  }
-  const s = SEG[lo], t = (dist - s.start) / s.len;
-  return { x: s.ax + s.dx * t, y: s.ay + s.dy * t, angle: s.angle };
-}
+const levelById = id => LEVELS.findIndex(l => l.id === id);
 
 /* ------------------------------------------------------------- balance --- */
 
@@ -137,16 +140,28 @@ const WAVES = [
 const DIFF = {
   easy:   { hp:0.85, speed:0.92, energy:440, lives:25, label:'EASY' },
   normal: { hp:1.00, speed:1.00, energy:410, lives:20, label:'NORMAL' },
-  hard:   { hp:1.18, speed:1.00, energy:390, lives:16, label:'HARD' },
+  hard:   { hp:1.12, speed:1.00, energy:390, lives:18, label:'HARD' },
 };
+
+// Enemies move at a fixed speed in map pixels per second, NOT at a speed
+// normalised to cross any road in the same time. Normalising was hiding the
+// maps from the balance: with every crossing pinned to 22 seconds, a 3000px
+// road and a 1900px one played identically, and the simulation duly reported
+// six levels with the same result to the wave. Fixed speed makes road length
+// mean something — a longer road is more seconds under fire, so it is easier,
+// and a level pays for its length with fewer build pads.
+const BASE_SPEED = 87;
 
 const REST_MS = 20000;   // breathing room between waves before auto-start
 
 /* --------------------------------------------------------------- state --- */
 
 const S = {
-  screen: 'boot',        // boot | menu | diff | play | result
+  screen: 'boot',        // boot | menu | levels | diff | play | result
   diff: 'normal',
+  level: 0,              // index into LEVELS
+  map: null,             // built level: path, pads, arc lengths
+  baked: null,           // the map composited once into an offscreen canvas
   running: false,        // simulation ticking (false while an overlay is up)
   speed: 1,
   energy: 0, lives: 0, score: 0,
@@ -162,9 +177,11 @@ const S = {
   dirty: true,
 };
 
-const SAVE_KEY = 'islanddefence.v1';
+const SAVE_KEY = 'islanddefence.v2';
 const save = Object.assign(
-  { gems: 0, best: null, music: true, sound: true },
+  // stars: { levelId: 0-3 }. A level is unlocked once the one before it has
+  // any stars at all, so a player who scrapes a win is never stuck.
+  { gems: 0, stars: {}, music: true, sound: true },
   (() => { try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; }
            catch (_) { return {}; } })()
 );
@@ -176,7 +193,6 @@ function persist() {
 
 const IMG = {};
 const ASSET_NAMES = [
-  'map1.jpg','menu_bg.jpg',
   'tower_fire.png','tower_ice.png','tower_bolt.png','tower_arcane.png',
   'btn_music.png','btn_music_off.png','btn_sound.png','btn_sound_off.png',
 ];
@@ -320,10 +336,10 @@ function spawnInterval() {
 
 function spawn(kind) {
   const k = KINDS[kind], d = DIFF[S.diff];
-  const hp = (66 + S.wave * 30) * k.hp * d.hp;
+  const hp = (66 + S.wave * 30) * k.hp * d.hp * LEVELS[S.level].hp;
   S.enemies.push({
     kind, dist: 0, hp, maxHp: hp,
-    speed: (PATH_LEN / 22) * k.speed * d.speed,
+    speed: BASE_SPEED * k.speed * d.speed,
     slowUntil: 0, slowFactor: 1,
     reward: Math.round((7 + S.wave * 1.6) * k.reward),
     anim: Math.random() * 1000,
@@ -352,8 +368,9 @@ function finish(won) {
     : S.lives >= d.lives * 0.55 ? 2 : 1;
   if (won) {
     save.gems += 5;
-    const prev = save.best;
-    if (!prev || stars > prev.stars) save.best = { stars, diff: S.diff };
+    const id = LEVELS[S.level].id;
+    // Keep the best result for a level, never overwrite it with a worse one.
+    save.stars[id] = Math.max(save.stars[id] || 0, stars);
     persist();
   }
   sfx(won ? 'win' : 'lose');
@@ -425,9 +442,9 @@ function update(dt) {
     if (e.hp <= 0) continue;
     const factor = S.time < e.slowUntil ? e.slowFactor : 1;
     e.dist += e.speed * factor * dt / 1000;
-    const p = pointAt(e.dist);
+    const p = pathPointAt(S.map, e.dist);
     e.x = p.x; e.y = p.y; e.angle = p.angle;
-    if (e.dist >= PATH_LEN) {
+    if (e.dist >= S.map.length) {
       e.hp = 0;
       e.leaked = true;
       S.lives--;
@@ -509,8 +526,9 @@ function render() {
   ctx.rect(0, 0, MAP_W, MAP_H);
   ctx.clip();
 
-  const map = IMG['map1.jpg'];
-  if (map && map.naturalWidth) ctx.drawImage(map, 0, 0, MAP_W, MAP_H);
+  // One drawImage for the whole board. The map was composited into this
+  // canvas once when the level started; three hundred props cost nothing here.
+  if (S.baked) ctx.drawImage(S.baked, 0, 0, MAP_W, MAP_H);
 
   drawPads();
   drawTowers();
@@ -524,9 +542,10 @@ function render() {
 function drawPads() {
   const def = TOWERS[S.selectedType];
   const affordable = S.energy >= def.cost;
-  for (let i = 0; i < PADS.length; i++) {
+  const pads = S.map.pads;
+  for (let i = 0; i < pads.length; i++) {
     if (S.towers.some(t => t.pad === i)) continue;
-    const [x, y] = PADS[i];
+    const [x, y] = pads[i];
     ctx.beginPath();
     ctx.arc(x, y, 38, 0, Math.PI * 2);
     ctx.fillStyle = affordable ? 'rgba(255,214,65,.17)' : 'rgba(120,120,120,.14)';
@@ -776,9 +795,10 @@ function renderUpgrade() {
 
 function showResult(won, stars) {
   el('resultHdr').src = won ? 'assets/hdr_victory.png' : 'assets/hdr_failed.png';
+  const lvl = LEVELS[S.level];
   el('resultMsg').innerHTML = won
-    ? 'ISLAND HELD'
-    : `SORRY :(<br>THE ROAD FELL AT WAVE ${S.wave}`;
+    ? `${lvl.name}<br>HELD`
+    : `SORRY :(<br>${lvl.name} FELL AT WAVE ${S.wave}`;
   // The failure art fills the window on a loss; on a win the same space gets
   // the run's figures, which is the thing a player actually wants to read.
   el('resultArt').style.display = won ? 'none' : '';
@@ -787,6 +807,11 @@ function showResult(won, stars) {
         (_, i) => i < stars ? '★' : '<span class="off">★</span>').join('')
     : '';
   const d = DIFF[S.diff];
+  const nextIndex = S.level + 1;
+  const hasNext = won && nextIndex < LEVELS.length;
+  el('resultNext').style.display = hasNext ? '' : 'none';
+  el('resultNext').onclick = hasNext
+    ? () => newRun(nextIndex, S.diff) : null;
   el('resultStats').innerHTML = won
     ? [['DIFFICULTY', d.label], ['SCORE', S.score],
        ['LIVES LEFT', `${S.lives}/${d.lives}`], ['TOWERS BUILT', S.towers.length],
@@ -798,8 +823,13 @@ function showResult(won, stars) {
 
 /* --------------------------------------------------------------- flow ---- */
 
-function newRun(diff) {
+function newRun(levelIndex, diff) {
+  S.level = levelIndex;
   S.diff = diff;
+  // Build the geometry, then composite the map once. Everything after this
+  // reads S.map for the path and pads and blits S.baked for the picture.
+  S.map = buildLevel(LEVELS[levelIndex], MAP_W, MAP_H);
+  S.baked = renderLevel(S.map, makeCanvas);
   const d = DIFF[diff];
   S.energy = d.energy;
   S.lives = d.lives;
@@ -820,10 +850,82 @@ function newRun(diff) {
   updateSpeedButton();
   hud.classList.remove('hide');
   show('menu', false);
+  show('levelOverlay', false);
   show('diffOverlay', false);
   show('resultOverlay', false);
   show('upgradeOverlay', false);
   el('pause').innerHTML = '&#10073;&#10073;';
+}
+
+function makeCanvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  return c;
+}
+
+/* ------------------------------------------------------- level select ---- */
+
+// A level is unlocked when the one before it has been cleared at all. Locking
+// on a star count would wall off a player who won narrowly, which is exactly
+// the player who needs the next map least likely to be a wall.
+function unlocked(i) {
+  return i === 0 || (save.stars[LEVELS[i - 1].id] || 0) > 0;
+}
+
+function totalStars() {
+  return LEVELS.reduce((n, l) => n + (save.stars[l.id] || 0), 0);
+}
+
+// Thumbnails come free: the same renderer, at card size. There is no art to
+// draw, cache or ship for them.
+// Cached as a data URL rather than as a <canvas>: cloneNode on a canvas
+// copies the element and none of its bitmap, so every card drew blank.
+const thumbCache = {};
+function levelThumb(spec) {
+  if (!thumbCache[spec.id]) {
+    const full = renderLevel(buildLevel(spec, MAP_W, MAP_H), makeCanvas);
+    const t = makeCanvas(384, 216);
+    t.getContext('2d').drawImage(full, 0, 0, 384, 216);
+    thumbCache[spec.id] = t.toDataURL('image/webp', 0.8);
+  }
+  return thumbCache[spec.id];
+}
+
+function openLevels() {
+  const grid = el('levelGrid');
+  grid.innerHTML = '';
+  LEVELS.forEach((lvl, i) => {
+    const open = unlocked(i);
+    const stars = save.stars[lvl.id] || 0;
+    const card = document.createElement('button');
+    card.className = 'levelCard' + (open ? '' : ' locked');
+    card.disabled = !open;
+    card.setAttribute('aria-label',
+      `${lvl.name}${open ? `, ${stars} of 3 stars` : ', locked'}`);
+
+    const shot = new Image();
+    shot.className = 'thumb';
+    shot.alt = '';
+    shot.src = levelThumb(lvl);
+    card.appendChild(shot);
+
+    const cap = document.createElement('div');
+    cap.className = 'cap';
+    cap.innerHTML = `<span class="n">${i + 1}. ${lvl.name}</span>` +
+      `<span class="st">${open
+        ? Array.from({ length: 3 }, (_, k) =>
+            k < stars ? '★' : '<i>★</i>').join('')
+        : 'LOCKED'}</span>`;
+    card.appendChild(cap);
+
+    card.addEventListener('click', () => {
+      S.level = i;
+      show('diffOverlay', true);
+    });
+    grid.appendChild(card);
+  });
+  el('levelTotal').textContent = `${totalStars()} / ${LEVELS.length * 3} STARS`;
+  show('levelOverlay', true);
 }
 
 function toMenu() {
@@ -833,15 +935,27 @@ function toMenu() {
   show('resultOverlay', false);
   show('upgradeOverlay', false);
   show('diffOverlay', false);
+  show('levelOverlay', false);
   show('menu', true);
   syncMenu();
 }
 
 function syncMenu() {
-  const b = save.best;
-  el('menuBest').textContent = b
-    ? `BEST: ${'★'.repeat(b.stars)} ON ${DIFF[b.diff].label}  ·  ${save.gems} GEMS`
+  const n = totalStars();
+  el('menuBest').textContent = n
+    ? `${n} / ${LEVELS.length * 3} STARS  ·  ${save.gems} GEMS`
     : `${save.gems} GEMS`;
+}
+
+// The menu background is a level, rendered. The last map the player unlocked,
+// so the menu shows where they have got to — and it costs no image either.
+function paintMenuBackdrop() {
+  let i = 0;
+  while (i + 1 < LEVELS.length && unlocked(i + 1)) i++;
+  const cv = el('menuBg');
+  cv.width = MAP_W; cv.height = MAP_H;
+  cv.getContext('2d').drawImage(
+    renderLevel(buildLevel(LEVELS[i], MAP_W, MAP_H), makeCanvas), 0, 0);
 }
 
 function updateSpeedButton() {
@@ -857,10 +971,11 @@ function tapBoard(clientX, clientY) {
   const hit = S.towers.find(t => Math.hypot(p.x - t.x, p.y - t.y) < 74);
   if (hit) { openUpgrade(hit); return; }
 
+  const pads = S.map.pads;
   let pick = -1, best = 64;
-  for (let i = 0; i < PADS.length; i++) {
+  for (let i = 0; i < pads.length; i++) {
     if (S.towers.some(t => t.pad === i)) continue;
-    const d = Math.hypot(p.x - PADS[i][0], p.y - PADS[i][1]);
+    const d = Math.hypot(p.x - pads[i][0], p.y - pads[i][1]);
     if (d < best) { best = d; pick = i; }
   }
   if (pick < 0) return;
@@ -869,7 +984,7 @@ function tapBoard(clientX, clientY) {
   if (S.energy < def.cost) { toast('NOT ENOUGH ENERGY'); return; }
   S.energy -= def.cost;
   S.towers.push({
-    x: PADS[pick][0], y: PADS[pick][1], pad: pick, type: S.selectedType,
+    x: pads[pick][0], y: pads[pick][1], pad: pick, type: S.selectedType,
     up: { dmg: 0, range: 0, rate: 0 }, spent: def.cost, cool: 260, angle: 0,
   });
   S.dirty = true;
@@ -909,11 +1024,12 @@ el('upgradeSell').addEventListener('click', () => {
   closeUpgrade();
 });
 
-el('menuPlay').addEventListener('click', () => { audio(); show('diffOverlay', true); });
+el('menuPlay').addEventListener('click', () => { audio(); openLevels(); });
+el('levelClose').addEventListener('click', () => show('levelOverlay', false));
 for (const b of document.querySelectorAll('.diffBtn')) {
-  b.addEventListener('click', () => newRun(b.dataset.diff));
+  b.addEventListener('click', () => newRun(S.level, b.dataset.diff));
 }
-el('resultRetry').addEventListener('click', () => newRun(S.diff));
+el('resultRetry').addEventListener('click', () => newRun(S.level, S.diff));
 el('resultMenu').addEventListener('click', toMenu);
 
 el('btnMusic').addEventListener('click', e => {
@@ -966,6 +1082,7 @@ loadAssets().then(() => {
     'assets/' + (save.music ? 'btn_music.png' : 'btn_music_off.png');
   el('btnSound').querySelector('img').src =
     'assets/' + (save.sound ? 'btn_sound.png' : 'btn_sound_off.png');
+  paintMenuBackdrop();
   const boot = el('boot');
   boot.classList.add('out');
   setTimeout(() => boot.remove(), 450);

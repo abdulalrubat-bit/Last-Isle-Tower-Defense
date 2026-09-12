@@ -1,62 +1,194 @@
 {
   "_comment": [
     "Source name -> output name, longest-edge cap, mode.",
-    "mode 'opaque' = full-bleed JPEG background, no alpha.",
+    "mode 'opaque' = full-bleed background, no alpha. Empty: since the terrain",
+    "is drawn in code (map.js) the game ships no background images at all.",
     "mode 'sprite' = has or needs alpha. Art already carrying an alpha channel",
     "passes through untouched; art delivered flat on black is keyed.",
     "Caps are ~2x the largest size the asset is ever drawn at. The original",
     "pack shipped a 1536x1527 PNG for a button drawn at 330x170."
   ],
-  "opaque": {
-    "game_background_1.png": ["map1.jpg", 1536],
-    "bg.png": ["menu_bg.jpg", 1280]
-  },
+  "opaque": {},
   "sprite": {
-    "tower_fire.png": ["tower_fire.png", 256],
-    "tower_ice.png": ["tower_ice.png", 256],
-    "tower_lightning.png": ["tower_bolt.png", 256],
-    "tower_arcane.png": ["tower_arcane.png", 256],
-    "bar_1.png": ["bar_energy.png", 640],
-    "bar_2.png": ["bar_gems.png", 640],
-    "bar_3.png": ["bar_stars.png", 640],
-    "bar_4.png": ["bar_lives.png", 640],
-    "bg_bar.png": ["tray.png", 1536],
-    "button_start.png": ["btn_start.png", 240],
-    "skull.png": ["skull.png", 192],
-    "skull_bg.png": ["skull_bg.png", 192],
-    "skull_arr.png": ["skull_arrow.png", 128],
-    "button_play.png": ["btn_play.png", 400],
-    "button_settings.png": ["btn_settings.png", 240],
-    "button_music.png": ["btn_music.png", 160],
-    "button_music_off.png": ["btn_music_off.png", 160],
-    "button_sound.png": ["btn_sound.png", 160],
-    "button_sound_off.png": ["btn_sound_off.png", 160],
-    "difficulty_window.png": ["window.png", 1024],
-    "difficulty_header_diff.png": ["hdr_difficulty.png", 700],
-    "difficulty_button_easy.png": ["btn_easy.png", 560],
-    "difficulty_button_normal.png": ["btn_normal.png", 560],
-    "difficulty_button_hard.png": ["btn_hard.png", 560],
-    "failed_header.png": ["hdr_failed.png", 700],
-    "failed_preview.png": ["art_failed.png", 420],
-    "failed_button_left.png": ["btn_menu.png", 256],
-    "failed_button_restart.png": ["btn_restart.png", 256],
-    "achievement_header_achievement.png": ["hdr_victory.png", 700],
-    "upgrade_header.png": ["hdr_upgrade.png", 700],
-    "upgrade_close.png": ["btn_close.png", 160],
-    "upgrade_1.png": ["card_damage.png", 320],
-    "upgrade_10.png": ["card_range.png", 320],
-    "upgrade_11.png": ["card_rate.png", 320],
-    "upgrade_reset.png": ["btn_sell.png", 288],
-    "upgrade_done.png": ["btn_done.png", 288],
-    "enemy_run_0.png": ["enemy_run_0.png", 160],
-    "enemy_run_1.png": ["enemy_run_1.png", 160],
-    "enemy_run_2.png": ["enemy_run_2.png", 160],
-    "enemy_run_3.png": ["enemy_run_3.png", 160],
-    "enemy_run_4.png": ["enemy_run_4.png", 160],
-    "enemy_run_5.png": ["enemy_run_5.png", 160],
-    "enemy_run_6.png": ["enemy_run_6.png", 160],
-    "enemy_run_7.png": ["enemy_run_7.png", 160],
-    "enemy_run_8.png": ["enemy_run_8.png", 160],
-    "enemy_run_9.png": ["enemy_run_9.png", 160]
+    "tower_fire.png": [
+      "tower_fire.png",
+      256
+    ],
+    "tower_ice.png": [
+      "tower_ice.png",
+      256
+    ],
+    "tower_lightning.png": [
+      "tower_bolt.png",
+      256
+    ],
+    "tower_arcane.png": [
+      "tower_arcane.png",
+      256
+    ],
+    "bar_1.png": [
+      "bar_energy.png",
+      640
+    ],
+    "bar_2.png": [
+      "bar_gems.png",
+      640
+    ],
+    "bar_3.png": [
+      "bar_stars.png",
+      640
+    ],
+    "bar_4.png": [
+      "bar_lives.png",
+      640
+    ],
+    "bg_bar.png": [
+      "tray.png",
+      1536
+    ],
+    "button_start.png": [
+      "btn_start.png",
+      240
+    ],
+    "skull.png": [
+      "skull.png",
+      192
+    ],
+    "skull_bg.png": [
+      "skull_bg.png",
+      192
+    ],
+    "skull_arr.png": [
+      "skull_arrow.png",
+      128
+    ],
+    "button_play.png": [
+      "btn_play.png",
+      400
+    ],
+    "button_music.png": [
+      "btn_music.png",
+      160
+    ],
+    "button_music_off.png": [
+      "btn_music_off.png",
+      160
+    ],
+    "button_sound.png": [
+      "btn_sound.png",
+      160
+    ],
+    "button_sound_off.png": [
+      "btn_sound_off.png",
+      160
+    ],
+    "difficulty_window.png": [
+      "window.png",
+      1024
+    ],
+    "difficulty_header_diff.png": [
+      "hdr_difficulty.png",
+      700
+    ],
+    "difficulty_button_easy.png": [
+      "btn_easy.png",
+      560
+    ],
+    "difficulty_button_normal.png": [
+      "btn_normal.png",
+      560
+    ],
+    "difficulty_button_hard.png": [
+      "btn_hard.png",
+      560
+    ],
+    "failed_header.png": [
+      "hdr_failed.png",
+      700
+    ],
+    "failed_preview.png": [
+      "art_failed.png",
+      420
+    ],
+    "failed_button_left.png": [
+      "btn_menu.png",
+      256
+    ],
+    "failed_button_restart.png": [
+      "btn_restart.png",
+      256
+    ],
+    "achievement_header_achievement.png": [
+      "hdr_victory.png",
+      700
+    ],
+    "upgrade_header.png": [
+      "hdr_upgrade.png",
+      700
+    ],
+    "upgrade_close.png": [
+      "btn_close.png",
+      160
+    ],
+    "upgrade_1.png": [
+      "card_damage.png",
+      320
+    ],
+    "upgrade_10.png": [
+      "card_range.png",
+      320
+    ],
+    "upgrade_11.png": [
+      "card_rate.png",
+      320
+    ],
+    "upgrade_reset.png": [
+      "btn_sell.png",
+      288
+    ],
+    "upgrade_done.png": [
+      "btn_done.png",
+      288
+    ],
+    "enemy_run_0.png": [
+      "enemy_run_0.png",
+      160
+    ],
+    "enemy_run_1.png": [
+      "enemy_run_1.png",
+      160
+    ],
+    "enemy_run_2.png": [
+      "enemy_run_2.png",
+      160
+    ],
+    "enemy_run_3.png": [
+      "enemy_run_3.png",
+      160
+    ],
+    "enemy_run_4.png": [
+      "enemy_run_4.png",
+      160
+    ],
+    "enemy_run_5.png": [
+      "enemy_run_5.png",
+      160
+    ],
+    "enemy_run_6.png": [
+      "enemy_run_6.png",
+      160
+    ],
+    "enemy_run_7.png": [
+      "enemy_run_7.png",
+      160
+    ],
+    "enemy_run_8.png": [
+      "enemy_run_8.png",
+      160
+    ],
+    "enemy_run_9.png": [
+      "enemy_run_9.png",
+      160
+    ]
   }
 }

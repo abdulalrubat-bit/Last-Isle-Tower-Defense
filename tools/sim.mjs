@@ -32,6 +32,8 @@ const MIME = { '.html':'text/html', '.js':'text/javascript', '.json':'applicatio
 const args = process.argv.slice(2);
 const only = args.includes('--strategy') ? args[args.indexOf('--strategy') + 1] : null;
 const runs = args.includes('--runs') ? Number(args[args.indexOf('--runs') + 1]) : 1;
+const full = args.includes('--full');      // every strategy x level x difficulty
+const lvlArg = args.includes('--level') ? args[args.indexOf('--level') + 1] : null;
 
 const srv = http.createServer((q, r) => {
   let f = decodeURIComponent(q.url.split('?')[0]);
@@ -51,18 +53,7 @@ page.on('pageerror', e => errors.push(e.message));
 await page.goto('http://localhost:8731/', { waitUntil: 'networkidle' });
 await page.waitForFunction(() => !document.getElementById('boot'), null, { timeout: 20000 });
 
-const rows = await page.evaluate(({ only, runs }) => {
-  // Pads ordered by how early on the road they sit: a competent player
-  // fortifies the approach before the exit.
-  const padOrder = PADS.map((p, i) => {
-    let best = 1e9, at = 0;
-    for (let d = 0; d < PATH_LEN; d += 8) {
-      const q = pointAt(d), dd = Math.hypot(q.x - p[0], q.y - p[1]);
-      if (dd < best) { best = dd; at = d; }
-    }
-    return { i, at };
-  }).sort((a, b) => a.at - b.at).map(o => o.i);
-
+const rows = await page.evaluate(({ only, runs, full, lvlArg }) => {
   const STRATS = {
     'mixed/cheapest':    { build:['fire','fire','bolt','ice','arcane','fire','bolt','arcane','ice','bolt','fire'], pick:'cheap' },
     'mixed/damage':      { build:['fire','fire','bolt','ice','arcane','fire','bolt','arcane','ice','bolt','fire'], pick:'dmg' },
@@ -71,70 +62,111 @@ const rows = await page.evaluate(({ only, runs }) => {
     'arcane+ice/damage': { build:['fire','ice','arcane','arcane','ice','arcane','arcane','ice','arcane','bolt','arcane'], pick:'dmg' },
   };
 
-  function bot(cfg) {
-    // Fill every affordable pad, then spend the remainder on upgrades — which
-    // is what a player does before pressing start.
-    for (let n = 0; n < PADS.length; n++) {
-      const pad = padOrder[n];
-      if (S.towers.some(t => t.pad === pad)) continue;
-      const type = cfg.build[n % cfg.build.length], def = TOWERS[type];
-      if (S.energy >= def.cost) {
-        S.energy -= def.cost;
-        S.towers.push({ x:PADS[pad][0], y:PADS[pad][1], pad, type,
-          up:{dmg:0,range:0,rate:0}, spent:def.cost, cool:260, angle:0 });
+  function play(levelIndex, diff, cfg) {
+    newRun(levelIndex, diff);
+    // Pads ordered by how early on the road they sit: a competent player
+    // fortifies the approach before the exit.
+    const pads = S.map.pads;
+    const order = pads.map((p, i) => {
+      let best = 1e9, at = 0;
+      for (let d = 0; d < S.map.length; d += 8) {
+        const q = pathPointAt(S.map, d), dd = Math.hypot(q.x - p[0], q.y - p[1]);
+        if (dd < best) { best = dd; at = d; }
+      }
+      return { i, at };
+    }).sort((a, b) => a.at - b.at).map(o => o.i);
+
+    function bot() {
+      // Fill every affordable pad, then spend the rest on upgrades — which is
+      // what a player does before pressing start.
+      for (let n = 0; n < pads.length; n++) {
+        const pad = order[n];
+        if (S.towers.some(t => t.pad === pad)) continue;
+        const type = cfg.build[n % cfg.build.length], def = TOWERS[type];
+        if (S.energy >= def.cost) {
+          S.energy -= def.cost;
+          S.towers.push({ x:pads[pad][0], y:pads[pad][1], pad, type,
+            up:{dmg:0,range:0,rate:0}, spent:def.cost, cool:260, angle:0 });
+        }
+      }
+      if (S.towers.length < 4) return;
+      const tracks = cfg.pick === 'cheap' ? TRACK_ORDER
+                   : cfg.pick === 'dmg'   ? ['dmg','rate','range'] : ['rate','dmg','range'];
+      for (let g = 0; g < 40; g++) {
+        let bt = null, bk = null, bs = 1e9;
+        for (const t of S.towers) for (const k of tracks) {
+          if (t.up[k] >= MAX_TRACK) continue;
+          const c = upgradeCost(t, k);
+          const sc = cfg.pick === 'cheap' ? c : c + tracks.indexOf(k) * 1000;
+          if (sc < bs && S.energy >= c * 2) { bs = sc; bt = t; bk = k; }
+        }
+        if (!bt) break;
+        const c = upgradeCost(bt, bk);
+        S.energy -= c; bt.spent += c; bt.up[bk]++;
       }
     }
-    if (S.towers.length < 4) return;
-    const order = cfg.pick === 'cheap' ? TRACK_ORDER
-                : cfg.pick === 'dmg'   ? ['dmg','rate','range'] : ['rate','dmg','range'];
-    for (let g = 0; g < 40; g++) {
-      let bt = null, bk = null, bs = 1e9;
-      for (const t of S.towers) for (const k of order) {
-        if (t.up[k] >= MAX_TRACK) continue;
-        const c = upgradeCost(t, k);
-        const score = cfg.pick === 'cheap' ? c : c + order.indexOf(k) * 1000;
-        if (score < bs && S.energy >= c * 2) { bs = score; bt = t; bk = k; }
-      }
-      if (!bt) break;
-      const c = upgradeCost(bt, bk);
-      S.energy -= c; bt.spent += c; bt.up[bk]++;
+
+    let guard = 0;
+    while (S.phase !== 'done' && guard++ < 500000) {
+      if (S.phase === 'ready') { bot(); startWave(true); }
+      else if (guard % 24 === 0) bot();
+      update(33);
     }
+    const d = DIFF[diff];
+    return { won: S.lives > 0, wave: S.wave, lives: S.lives, of: d.lives,
+      score: S.score, towers: S.towers.length,
+      stars: S.lives <= 0 ? 0 : S.lives >= d.lives*0.9 ? 3
+           : S.lives >= d.lives*0.55 ? 2 : 1 };
   }
 
   const out = [];
-  for (const [name, cfg] of Object.entries(STRATS)) {
-    if (only && name !== only) continue;
-    for (const diff of ['easy', 'normal', 'hard']) {
-      for (let run = 0; run < runs; run++) {
-        newRun(diff);
-        let guard = 0, peak = 0;
-        while (S.phase !== 'done' && guard++ < 400000) {
-          if (S.phase === 'ready') { bot(cfg); startWave(true); }
-          else if (guard % 24 === 0) bot(cfg);
-          peak = Math.max(peak, S.enemies.length);
-          update(33);
+  const levels = lvlArg == null ? LEVELS.map((_, i) => i)
+                                : [LEVELS.findIndex(l => l.id === lvlArg)].filter(i => i >= 0);
+  const diffs = full ? ['easy','normal','hard'] : ['easy','normal','hard'];
+  for (const li of levels) {
+    for (const diff of diffs) {
+      for (const [name, cfg] of Object.entries(STRATS)) {
+        if (only && name !== only) continue;
+        for (let r = 0; r < runs; r++) {
+          out.push(Object.assign({ level: LEVELS[li].id, n: li + 1, strat: name, diff },
+                                 play(li, diff, cfg)));
         }
-        const d = DIFF[diff];
-        out.push({ strat:name, diff, won:S.lives > 0, wave:S.wave, lives:S.lives,
-          of:d.lives, score:S.score, towers:S.towers.length, peak,
-          stars: S.lives <= 0 ? 0 : S.lives >= d.lives*0.9 ? 3
-               : S.lives >= d.lives*0.55 ? 2 : 1 });
       }
     }
   }
   return out;
-}, { only, runs });
+}, { only, runs, full, lvlArg });
 
-console.log('strategy              diff    result  wave   lives  stars  score  peak');
-for (const r of rows) {
-  console.log(
-    `${r.strat.padEnd(21)} ${r.diff.padEnd(7)} ${(r.won ? 'WON' : 'lost').padEnd(7)} ` +
-    `${String(r.wave).padStart(2)}/15 ${`${r.lives}/${r.of}`.padStart(7)} ` +
-    `${String(r.stars).padStart(5)}  ${String(r.score).padStart(5)}  ${String(r.peak).padStart(4)}`);
+if (full || only) {
+  console.log('level        diff    strategy              result  wave   lives  score');
+  for (const r of rows) console.log(
+    `${r.level.padEnd(12)} ${r.diff.padEnd(7)} ${r.strat.padEnd(21)} ` +
+    `${(r.won ? 'WON' : 'lost').padEnd(7)} ${String(r.wave).padStart(2)}/15 ` +
+    `${`${r.lives}/${r.of}`.padStart(7)} ${String(r.score).padStart(6)}`);
+} else {
+  // The shape that matters: per level and difficulty, how many of the five
+  // build strategies clear it, and how comfortably the best one does.
+  console.log('level           easy         normal        hard');
+  for (const lvl of [...new Set(rows.map(r => r.level))]) {
+    const cells = ['easy','normal','hard'].map(d => {
+      const rs = rows.filter(r => r.level === lvl && r.diff === d);
+      const won = rs.filter(r => r.won);
+      const best = won.length ? Math.max(...won.map(r => r.lives)) : 0;
+      const of = rs[0].of;
+      const deepest = Math.max(...rs.map(r => r.wave));
+      return won.length
+        ? `${won.length}/${rs.length} win ${best}/${of}`.padEnd(13)
+        : `0/${rs.length} · w${deepest}`.padEnd(13);
+    });
+    const n = rows.find(r => r.level === lvl).n;
+    console.log(`${(n + '. ' + lvl).padEnd(15)} ${cells.join(' ')}`);
+  }
+  const wins = rows.filter(r => r.won).length;
+  console.log(`\n${wins}/${rows.length} runs won.`);
+  console.log('Healthy: easy mostly cleared, normal cleared by several builds,');
+  console.log('hard cleared by one or two. A level nothing clears is a wall;');
+  console.log('a level everything clears is not asking anything.');
 }
-const won = rows.filter(r => r.won).length;
-console.log(`\n${won}/${rows.length} runs won.` +
-  ' A healthy map: most strategies clear normal, one or two clear hard.');
 if (errors.length) { console.log('ERRORS:\n' + errors.join('\n')); process.exitCode = 1; }
 
 await browser.close(); srv.close();
