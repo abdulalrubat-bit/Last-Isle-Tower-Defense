@@ -1,0 +1,376 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Island Defence</title>
+<meta name="theme-color" content="#1d2a16">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Island Defence">
+<link rel="manifest" href="app.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root{
+    --gold:#ffd34d; --cream:#f5e1ad; --ink:#21140d;
+    --wood:#70451f; --wood-d:#3c2413; --panel:rgba(28,30,20,.74);
+  }
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#1d2a16;
+    touch-action:none;-webkit-user-select:none;user-select:none;
+    -webkit-tap-highlight-color:transparent;font-family:Arial,Helvetica,sans-serif}
+  button{font:inherit;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+  img{pointer-events:none}
+  #game{position:fixed;inset:0;display:block;width:100%;height:100%;touch-action:none}
+
+  /* ---- Boot card -------------------------------------------------------
+     Inline and dependency-free so it paints on the first frame, before a
+     single asset has downloaded. It is what covers the load, so nothing in
+     it may itself need loading. Same reasoning as the Rivenmark shell. */
+  #boot{position:fixed;inset:0;z-index:90;display:grid;place-items:center;
+    background:radial-gradient(120% 80% at 50% 36%,#2c4022,#141d10 70%);
+    color:#cfe0b4;transition:opacity .4s ease}
+  #boot.out{opacity:0;pointer-events:none}
+  #boot h1{margin:0;font:900 clamp(30px,7vw,58px)/1 Arial;letter-spacing:4px;
+    color:var(--gold);text-shadow:0 5px 0 #3f2a12,0 8px 14px #000}
+  #boot .sub{margin:12px 0 26px;font:700 clamp(11px,2.4vw,15px) Arial;
+    letter-spacing:3px;color:#9fb488}
+  #boot .bar{width:min(280px,54vw);height:5px;border-radius:3px;background:#1b2614;
+    border:1px solid #33462a;overflow:hidden;margin:0 auto}
+  #boot .bar>i{display:block;height:100%;width:4%;border-radius:3px;
+    background:linear-gradient(90deg,#6d4d22,var(--gold));transition:width .2s ease}
+  #boot .say{margin:12px 0 0;font:700 11px Arial;letter-spacing:1px;color:#6f8460}
+  #boot .wrap{text-align:center;padding:0 24px}
+
+  /* ---- Shared overlay furniture ---------------------------------------- */
+  .overlay{position:fixed;inset:0;z-index:50;display:none;align-items:center;
+    justify-content:center;padding:env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  .overlay.show{display:flex}
+  .overlay .shade{position:absolute;inset:0;background:rgba(0,0,0,.62)}
+  .win{position:relative;width:min(700px,92vw);height:min(660px,88vh);
+    display:flex;align-items:center;justify-content:center}
+  /* window.png is a nine-slice-ish frame; object-fit:fill is deliberate so the
+     frame always meets the content box exactly at any aspect. */
+  .win>.frame{position:absolute;inset:0;width:100%;height:100%;object-fit:fill}
+  .win>.hdr{position:absolute;left:11%;top:-6%;width:78%;height:22%;
+    object-fit:contain;z-index:3}
+  .win .body{position:absolute;left:13%;right:13%;top:23%;bottom:9%;z-index:2;
+    display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .iconBtn{border:0;background:transparent;padding:0}
+  .iconBtn img{display:block;width:100%;height:100%;object-fit:contain}
+  .iconBtn:active{transform:scale(.94)}
+
+  /* ---- Menu ------------------------------------------------------------- */
+  /* No `display` here on purpose: an id rule would outrank `.overlay`'s
+     display:none and leave the menu permanently on top of the board,
+     invisible and still swallowing every tap. Visibility is `.show` only. */
+  #menu{z-index:60;background:#0f1609}
+  #menuBg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+    filter:brightness(.6)}
+  #menu::after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.6))}
+  #menuPanel{position:relative;z-index:2;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:10px;width:92vw;height:92vh}
+  #menuTitle{margin:0;color:var(--gold);font:900 clamp(38px,8vw,84px)/.92 Arial;
+    letter-spacing:2px;text-align:center;text-shadow:0 7px 0 #57230d,0 11px 18px #000}
+  #menuSub{margin:0 0 4px;color:#ffe9b0;font:900 clamp(12px,2.4vw,22px) Arial;
+    letter-spacing:2px;text-shadow:2px 3px 0 #32170d}
+  #menuPlay{width:min(300px,54vw);height:min(150px,20vh)}
+  #menuBest{margin-top:2px;color:#fff4cf;font:700 13px Arial;text-shadow:2px 2px #000}
+  #menuAudio{position:absolute;z-index:3;right:max(3vw,env(safe-area-inset-right));
+    bottom:max(3vh,env(safe-area-inset-bottom));display:flex;gap:10px}
+  .audioBtn{width:min(66px,11vw);height:min(66px,11vw)}
+
+  /* ---- Difficulty ------------------------------------------------------- */
+  /* Above #menu: it opens on top of the menu rather than replacing it, so it
+     has to outrank it or it renders behind and swallows every tap. */
+  #diffOverlay{z-index:70}
+  #diffChoices{position:absolute;left:16%;right:16%;top:26%;bottom:7%;z-index:2;
+    display:flex;flex-direction:column;justify-content:space-between}
+  .diffBtn{width:100%;height:29%}
+
+  /* ---- Result (failed / victory) --------------------------------------- */
+  #resultArt{width:min(320px,60%);max-height:42%;object-fit:contain}
+  #resultMsg{margin-top:6px;text-align:center;color:#f2dca5;
+    font:900 clamp(19px,3.6vw,34px) Arial;text-shadow:3px 3px 0 #3b2416;line-height:1.2}
+  #resultStars{margin-top:10px;font-size:clamp(24px,5vw,40px);letter-spacing:6px;
+    color:#ffd34d;text-shadow:2px 2px 0 #3b2416}
+  #resultStars .off{color:#5c4a2a}
+  #resultStats{margin-top:14px;width:min(340px,86%);
+    font:700 clamp(11px,1.9vw,15px) Arial;color:#e7d3a4}
+  #resultStats div{display:flex;justify-content:space-between;padding:3px 0;
+    border-bottom:1px solid rgba(233,211,164,.18)}
+  #resultStats b{font-weight:700;letter-spacing:1px;color:#b9a479}
+  #resultStats span{font-weight:900;color:#fff2cd}
+  #resultStats:empty{display:none}
+  #resultBtns{position:absolute;left:22%;right:22%;bottom:2%;z-index:3;
+    display:flex;justify-content:space-between}
+  .resultBtn{width:34%;max-width:140px;aspect-ratio:1}
+
+  /* ---- Upgrade ---------------------------------------------------------- */
+  #upgradeWin{width:min(860px,94vw);height:min(680px,88vh)}
+  #upgradePanel{position:absolute;left:9%;right:9%;top:20%;bottom:6%;z-index:2;
+    border:5px solid #75451f;border-radius:24px;background:rgba(58,34,20,.95);
+    box-shadow:inset 0 0 0 3px #b66b2b,0 8px 20px #000b;
+    padding:14px;box-sizing:border-box;display:flex;flex-direction:column}
+  #upgradeName{text-align:center;color:var(--cream);
+    font:900 clamp(17px,3.2vw,30px) Arial;text-shadow:3px 3px #21140d}
+  #upgradeMeta{text-align:center;margin:3px 0 8px;color:var(--gold);
+    font:900 clamp(11px,2vw,17px) Arial;text-shadow:2px 2px #21140d}
+  #upgradeCards{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;
+    min-height:0}
+  .upCard{position:relative;border:0;background:transparent;padding:0;min-width:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-end}
+  .upCard>img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+  .upCard .lbl{position:relative;z-index:2;font:900 clamp(10px,1.9vw,16px) Arial;
+    color:var(--cream);text-shadow:2px 2px #21140d;text-align:center;line-height:1.15}
+  .upCard .pips{position:relative;z-index:2;margin:3px 0 2px;letter-spacing:3px;
+    font-size:clamp(9px,1.6vw,13px);color:var(--gold);text-shadow:1px 1px #21140d}
+  .upCard .pips .off{color:#6b5533}
+  .upCard .buy{position:relative;z-index:2;margin-bottom:6%;padding:2px 9px;
+    border-radius:9px;background:#1d120b;border:2px solid #d8b56a;color:#fff;
+    font:900 clamp(10px,1.7vw,14px) Arial}
+  .upCard[disabled]{opacity:.45}
+  .upCard:not([disabled]):active{transform:scale(.95)}
+  #upgradeActions{display:flex;align-items:center;justify-content:space-between;
+    gap:10px;height:22%;margin-top:6px}
+  #upgradeActions .iconBtn{height:100%;width:34%}
+  #upgradeClose{position:absolute;right:-2%;top:-4%;width:62px;height:62px;z-index:5}
+
+  /* ---- HUD -------------------------------------------------------------- */
+  #hud{position:fixed;inset:0;z-index:10;pointer-events:none;color:#fff;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right)
+      env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  #hud.hide{display:none}
+  #stats{position:absolute;left:2vw;top:2vh;width:min(330px,36vw);min-width:210px;
+    padding:9px 12px;border:3px solid var(--wood);border-radius:20px;
+    background:var(--panel);box-shadow:0 5px 14px #0009;
+    display:grid;grid-template-columns:1fr 1fr;gap:4px 6px}
+  .stat{position:relative;height:34px}
+  .stat img{position:absolute;inset:0;width:100%;height:100%;object-fit:fill}
+  .stat b{position:absolute;left:11px;top:8px;z-index:2;font:900 9px Arial;
+    color:#fff;text-shadow:2px 2px 3px #000;letter-spacing:.5px}
+  .stat span{position:absolute;right:12px;top:3px;z-index:2;font:900 16px Arial;
+    text-shadow:2px 2px 3px #000}
+  .stat.flash span{color:#ff7b5e}
+
+  #battleInfo{position:absolute;left:50%;top:2vh;transform:translateX(-50%);
+    min-width:172px;padding:7px 16px;border:3px solid var(--wood);border-radius:16px;
+    background:var(--panel);box-shadow:0 5px 12px #0008;text-align:center;
+    text-shadow:2px 2px 3px #000}
+  #waveLabel{font:900 clamp(15px,2.4vw,24px) Arial;color:var(--gold)}
+  #waveState{font:900 10px Arial;color:var(--cream);margin-top:1px;letter-spacing:1px}
+  #enemyCount{font:900 10px Arial;color:var(--cream);margin-top:1px}
+
+  #rightControls{position:absolute;right:2vw;top:2vh;display:flex;
+    flex-direction:column;gap:10px;align-items:center}
+  #pause{pointer-events:auto;width:62px;height:62px;border-radius:18px;
+    border:3px solid #26180d;background:linear-gradient(#9a765c,#553820);
+    color:#fff;font-size:26px;font-weight:900;box-shadow:0 4px 8px #0009}
+  #callWave{pointer-events:auto;position:relative;width:82px;height:82px;
+    border:0;background:transparent;padding:0}
+  #callWave img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+  #callWave .arrow{left:58%;top:30%;width:46%;height:38%}
+  #callWave .lbl{position:absolute;left:50%;top:64%;transform:translateX(-50%);
+    font:900 9px Arial;color:#fff1b0;text-shadow:2px 2px 2px #000;white-space:nowrap}
+  #callWave[disabled]{opacity:.35}
+  #callWave:not([disabled]):active{transform:scale(.94)}
+
+  #bottomBar{position:absolute;left:1vw;right:1vw;bottom:1vh;
+    height:min(104px,15vh);min-height:74px}
+  #bottomBar .bg{position:absolute;inset:0;width:100%;height:100%;object-fit:fill}
+  #trayLabel{position:absolute;left:50%;top:-11%;transform:translateX(-50%);
+    padding:3px 26px 5px;border:3px solid #c79645;border-bottom:0;
+    border-radius:16px 16px 0 0;background:linear-gradient(var(--wood),var(--wood-d));
+    font:900 clamp(13px,2vw,20px) Arial;color:#ffe8a3;text-shadow:2px 3px 2px #2a1208;
+    z-index:2;white-space:nowrap}
+  /* Centred, not left-packed: four slots in a full-width tray left a long
+     empty plank with the TOWERS label floating over nothing. */
+  #towerSlots{position:absolute;left:1.5%;right:16%;top:8%;height:84%;
+    display:flex;gap:10px;align-items:center;justify-content:center}
+  .slot{pointer-events:auto;position:relative;flex:1;height:100%;max-width:118px;
+    border:3px solid #bbb;border-radius:16px;padding:2px;
+    background:linear-gradient(#73451f,#3c2413);
+    box-shadow:inset 0 0 0 3px #222,0 3px 6px #0009;overflow:hidden}
+  .slot img{display:block;width:100%;height:72%;object-fit:contain;
+    filter:drop-shadow(0 3px 2px #000)}
+  .slot .cost{position:absolute;left:50%;bottom:3px;transform:translateX(-50%);
+    min-width:34px;padding:1px 6px;border-radius:9px;background:#1d120b;
+    border:2px solid #d8b56a;color:#fff;font:900 12px Arial;text-shadow:1px 1px 2px #000}
+  .slot.selected{outline:4px solid var(--gold);outline-offset:1px;
+    transform:translateY(-3px)}
+  .slot.poor{opacity:.5}
+  .slot.poor .cost{border-color:#8a3a2a;color:#ffb8a8}
+  .slot:active{transform:scale(.95)}
+  #startWave{pointer-events:auto;position:absolute;right:1%;top:6%;height:88%;
+    aspect-ratio:1;border:0;background:transparent;padding:0}
+  #startWave img{width:100%;height:100%;object-fit:contain}
+  #startWave .lbl{position:absolute;left:4%;right:4%;top:52%;
+    font:900 11px/11px Arial;color:#ffe9a6;text-align:center;
+    text-shadow:2px 2px 2px #000}
+  #startWave[disabled]{opacity:.4}
+  #startWave:not([disabled]):active{transform:scale(.95)}
+
+  #toast{position:absolute;left:50%;bottom:19vh;transform:translateX(-50%);
+    z-index:5;padding:7px 16px;border-radius:12px;background:rgba(20,12,6,.88);
+    border:2px solid #c79645;color:#ffe8a3;font:900 13px Arial;white-space:nowrap;
+    opacity:0;transition:opacity .2s ease}
+  #toast.show{opacity:1}
+
+  @media(max-width:760px){
+    #stats{left:8px;top:8px;width:196px;min-width:0;padding:6px 8px;border-radius:15px}
+    .stat{height:27px}
+    .stat b{left:8px;top:7px;font-size:8px}
+    .stat span{right:9px;top:3px;font-size:13px}
+    #battleInfo{top:8px;min-width:130px;padding:5px 10px;border-radius:12px}
+    #rightControls{right:8px;top:8px;gap:7px}
+    #pause{width:50px;height:50px;font-size:21px;border-radius:14px}
+    #callWave{width:66px;height:66px}
+    #bottomBar{height:80px;bottom:5px;left:6px;right:6px}
+    #towerSlots{gap:5px;right:17%}
+    .slot{max-width:74px;border-radius:13px}
+    .slot .cost{font-size:11px;min-width:30px}
+    #toast{bottom:15vh;font-size:11px}
+    #upgradePanel{left:6%;right:6%;padding:9px}
+    #upgradeCards{gap:5px}
+    #upgradeClose{width:46px;height:46px}
+    .win{width:95vw;height:82vh}
+  }
+  /* Short-and-wide (phone held in landscape): the HUD must not eat the board. */
+  @media(max-height:460px){
+    #bottomBar{height:68px}
+    .slot{max-width:62px}
+    #stats{width:180px}
+    #battleInfo{padding:4px 9px}
+  }
+</style>
+
+<canvas id="game"></canvas>
+
+<div id="hud" class="hide">
+  <div id="stats">
+    <div class="stat"><img src="assets/bar_energy.png" alt=""><b>ENERGY</b><span id="sEnergy">0</span></div>
+    <div class="stat"><img src="assets/bar_lives.png" alt=""><b>LIVES</b><span id="sLives">0</span></div>
+    <div class="stat"><img src="assets/bar_gems.png" alt=""><b>GEMS</b><span id="sGems">0</span></div>
+    <div class="stat"><img src="assets/bar_stars.png" alt=""><b>SCORE</b><span id="sScore">0</span></div>
+  </div>
+  <div id="battleInfo">
+    <div id="waveLabel">WAVE 0/15</div>
+    <div id="waveState">READY</div>
+    <div id="enemyCount">ENEMIES 0</div>
+  </div>
+  <div id="rightControls">
+    <button id="pause" aria-label="Pause">&#10073;&#10073;</button>
+    <button id="callWave" aria-label="Call the next wave early">
+      <img src="assets/skull_bg.png" alt="">
+      <img src="assets/skull.png" alt="">
+      <img class="arrow" src="assets/skull_arrow.png" alt="">
+      <span class="lbl">EARLY</span>
+    </button>
+  </div>
+  <div id="bottomBar">
+    <img class="bg" src="assets/tray.png" alt="">
+    <div id="trayLabel">TOWERS</div>
+    <div id="towerSlots"></div>
+    <button id="startWave" aria-label="Start next wave">
+      <img src="assets/btn_start.png" alt="">
+      <span class="lbl">START<br>WAVE</span>
+    </button>
+  </div>
+  <div id="toast"></div>
+</div>
+
+<div class="overlay" id="upgradeOverlay">
+  <div class="shade"></div>
+  <div class="win" id="upgradeWin">
+    <img class="hdr" src="assets/hdr_upgrade.png" alt="">
+    <button class="iconBtn" id="upgradeClose" aria-label="Close">
+      <img src="assets/btn_close.png" alt=""></button>
+    <div id="upgradePanel">
+      <div id="upgradeName">TOWER</div>
+      <div id="upgradeMeta">LEVEL 1</div>
+      <div id="upgradeCards"></div>
+      <div id="upgradeActions">
+        <button class="iconBtn" id="upgradeSell" aria-label="Sell tower">
+          <img src="assets/btn_sell.png" alt=""></button>
+        <button class="iconBtn" id="upgradeDone" aria-label="Done">
+          <img src="assets/btn_done.png" alt=""></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="resultOverlay">
+  <div class="shade"></div>
+  <div class="win">
+    <img class="frame" src="assets/window.png" alt="">
+    <img class="hdr" id="resultHdr" src="assets/hdr_failed.png" alt="">
+    <div class="body">
+      <img id="resultArt" src="assets/art_failed.png" alt="">
+      <div id="resultMsg">LEVEL FAILED</div>
+      <div id="resultStars"></div>
+      <div id="resultStats"></div>
+    </div>
+    <div id="resultBtns">
+      <button class="iconBtn resultBtn" id="resultMenu" aria-label="Main menu">
+        <img src="assets/btn_menu.png" alt=""></button>
+      <button class="iconBtn resultBtn" id="resultRetry" aria-label="Retry">
+        <img src="assets/btn_restart.png" alt=""></button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="diffOverlay">
+  <div class="shade"></div>
+  <div class="win">
+    <img class="frame" src="assets/window.png" alt="">
+    <img class="hdr" src="assets/hdr_difficulty.png" alt="">
+    <div id="diffChoices">
+      <button class="iconBtn diffBtn" data-diff="easy" aria-label="Easy">
+        <img src="assets/btn_easy.png" alt=""></button>
+      <button class="iconBtn diffBtn" data-diff="normal" aria-label="Normal">
+        <img src="assets/btn_normal.png" alt=""></button>
+      <button class="iconBtn diffBtn" data-diff="hard" aria-label="Hard">
+        <img src="assets/btn_hard.png" alt=""></button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="menu">
+  <img id="menuBg" src="assets/menu_bg.jpg" alt="">
+  <div id="menuPanel">
+    <h1 id="menuTitle">ISLAND<br>DEFENCE</h1>
+    <p id="menuSub">HOLD THE ROAD</p>
+    <button class="iconBtn" id="menuPlay" aria-label="Play">
+      <img src="assets/btn_play.png" alt=""></button>
+    <div id="menuBest">&nbsp;</div>
+  </div>
+  <div id="menuAudio">
+    <button class="iconBtn audioBtn" id="btnMusic" aria-label="Toggle music">
+      <img src="assets/btn_music.png" alt=""></button>
+    <button class="iconBtn audioBtn" id="btnSound" aria-label="Toggle sound">
+      <img src="assets/btn_sound.png" alt=""></button>
+  </div>
+</div>
+
+<div id="boot">
+  <div class="wrap">
+    <h1>ISLAND DEFENCE</h1>
+    <div class="sub">HOLD THE ROAD</div>
+    <div class="bar"><i id="bootBar"></i></div>
+    <p class="say" id="bootSay">loading the island…</p>
+  </div>
+</div>
+
+<script src="game.js"></script>
+<script>
+  // An enhancement, and guarded: a page that cannot boot without a service
+  // worker cannot boot from file://, which is exactly where a WebView build
+  // and local development live.
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(e =>
+        console.log('no service worker: ' + e.message));
+    });
+  }
+</script>
