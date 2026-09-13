@@ -519,6 +519,137 @@ function buildQueue(spec) {
     (a === bossKind ? 1 : 0) - (b === bossKind ? 1 : 0));
 }
 
+// ------------------------------------------------------------------------
+// What is coming next.
+//
+// A player who cannot see the next wave is not making decisions, they are
+// watching. This panel answers "what should I build before I press start",
+// and every word in it is DERIVED from the roster and the curve rather than
+// written per level — a level that swaps its heavy for an armoured one gets
+// the ARMOUR warning for free, and a warning can never go stale against the
+// thing it warns about.
+
+// Frame zero of the walk cycle, fitted to a box. Cached: the panel rebuilds
+// on every wave and these never change.
+const portraitCache = {};
+function enemyPortrait(kind, box) {
+  const key = kind + ':' + box;
+  if (portraitCache[key]) return portraitCache[key];
+  const a = RUN_FRAMES[kind];
+  if (!a) return null;
+  const cv = makeCanvas(box, box);
+  const s = Math.min(box / a.fw, box / a.fh);
+  const w = a.fw * s, h = a.fh * s;
+  cv.getContext('2d').drawImage(a.img, 0, 0, a.fw, a.fh,
+                                (box - w) / 2, (box - h) / 2, w, h);
+  portraitCache[key] = cv;
+  return cv;
+}
+
+// Each test is the same property the combat code reads, so a tag appears if
+// and only if the mechanic is actually in the wave.
+const THREATS = [
+  { tag:'BOSS',     boss:true, test: () => false },
+  { tag:'ARMOUR',   test: k => k.armour < 1 },
+  { tag:'AIR',      test: k => k.flying },
+  { tag:'NO SLOW',  test: k => k.slowImmune },
+  { tag:'REGEN',    test: k => k.regen > 0 },
+  { tag:'SPLITS',   test: k => !!k.split },
+];
+
+// Roles in the order they reach the player: fodder first, boss as punctuation.
+const ROLE_ORDER = ['fodder', 'fast', 'heavy', 'boss'];
+
+function curveFor() {
+  return CURVES[LEVELS[S.level].curve] || CURVES.standard;
+}
+
+// Waves until the next one carrying a boss, counting from `from`. Returns 0
+// when `from` itself has one and -1 when none is left in the level.
+function bossIn(from) {
+  const c = curveFor();
+  for (let i = from; i <= c.length; i++) {
+    if ((c[i - 1] || {}).boss) return i - from;
+  }
+  return -1;
+}
+
+// The threat tags a given wave carries, as a set. Wave 0 is empty, so every
+// threat in wave one counts as new and the opening warns at full volume.
+function threatsOf(n) {
+  const out = new Set();
+  const c = curveFor();
+  if (n < 1 || n > c.length) return out;
+  const spec = c[n - 1];
+  for (const role of ROLE_ORDER) {
+    if (!spec[role]) continue;
+    const k = KINDS[roleKind(role)];
+    for (const t of THREATS) {
+      if (!t.boss && t.test(k)) out.add(t.tag);
+    }
+  }
+  return out;
+}
+
+function renderPreview() {
+  const next = S.wave + 1;
+  const on = S.phase === 'ready' && next <= WAVES.length;
+  el('wavePreview').classList.toggle('show', on);
+  if (!on) return;
+
+  const spec = waveSpec(next);
+  el('previewHdr').textContent = `NEXT — WAVE ${next}`;
+
+  // One portrait per role present, with its count. Roles can share a kind
+  // (a roster may use the same unit for fodder and fast), so they are merged
+  // by kind rather than shown twice.
+  const byKind = new Map();
+  for (const role of ROLE_ORDER) {
+    if (!spec[role]) continue;
+    const kind = roleKind(role);
+    byKind.set(kind, (byKind.get(kind) || 0) + spec[role]);
+  }
+  const roster = el('previewRoster');
+  roster.innerHTML = '';
+  for (const [kind, n] of byKind) {
+    const d = document.createElement('div');
+    d.className = 'pvUnit';
+    const art = enemyPortrait(kind, 76);
+    if (art) { art.style.width = '100%'; d.appendChild(art); }
+    const b = document.createElement('b');
+    b.textContent = '\u00d7' + n;
+    d.appendChild(b);
+    d.title = kind;
+    roster.appendChild(d);
+  }
+
+  // A warning that is on for all fifteen waves is wallpaper. The first pass
+  // showed ARMOUR on every wave of a siege level and AIR on every wave of a
+  // swarm one, which is true and tells the player nothing. So a threat that
+  // is NEW this wave is loud, and one carried over from the wave before is
+  // shown quietly: the panel still says what the state is, but it only raises
+  // its voice when the answer to "what do I build" has actually changed.
+  const tags = el('previewThreats');
+  tags.innerHTML = '';
+  const held = threatsOf(next - 1);
+  for (const t of THREATS) {
+    const hit = t.boss ? !!spec.boss : threatsOf(next).has(t.tag);
+    if (!hit) continue;
+    const e = document.createElement('span');
+    // A boss is always news; it does not carry over from a wave it was not in.
+    const isNew = t.boss || !held.has(t.tag);
+    e.className = 'pvTag' + (t.boss ? ' boss' : isNew ? '' : ' held');
+    e.textContent = (isNew ? '\u26a0 ' : '') + t.tag;
+    tags.appendChild(e);
+  }
+
+  // Only worth saying when it is far enough off to build for and close enough
+  // to matter. Next wave already has its own BOSS tag.
+  const away = bossIn(next);
+  el('previewBoss').textContent =
+    away > 0 && away <= 4 ? `BOSS IN ${away} WAVE${away > 1 ? 'S' : ''}` : '';
+}
+
 function startWave(manual) {
   if (S.phase !== 'ready' || S.wave >= WAVES.length) return;
   if (manual && S.restLeft > 0 && S.wave > 0) {
@@ -583,6 +714,7 @@ function waveCleared() {
 function finish(won) {
   S.phase = 'done';
   S.running = false;
+  S.dirty = true;      // the next-wave panel has nothing left to preview
   const d = DIFF[S.diff];
   const stars = !won ? 0
     : S.lives >= d.lives * 0.9 ? 3
@@ -1061,6 +1193,7 @@ function syncHud() {
   }
   const canStart = S.phase === 'ready' && S.wave < WAVES.length;
   el('startWave').disabled = !canStart;
+  renderPreview();
 }
 
 // The countdown ticks every frame, so it is written separately from the
