@@ -1,40 +1,56 @@
 #!/usr/bin/env python3
-"""Pack the asset pack's map layers into one atlas the terrain renderer can use.
+"""Pack the tileset packs' map layers into one atlas the terrain renderer uses.
 
-    python3 tools/build-props.py ~/art/Tower_tileset/PNG
+    python3 tools/build-props.py ~/art/Tower_tileset/PNG ~/art/Tiles/*/PNG
 
-The pack ships each map as separate layers rather than as a flat picture:
-a tileable ground texture, road pieces, and painted trees, bushes, stones and
-decorations — four complete biome kits.
+Each pack ships four maps as separate layers rather than as flat pictures: a
+tileable ground texture, road pieces, and painted trees, bushes, stones and
+decorations. Several packs can be given at once; KITS below names each
+(pack, background) pair, and anything not named there is skipped.
 
 The road pieces are fixed corners and junctions, so they cannot follow an
 arbitrary spline and are not used as tiles. What IS used is the texture inside
-them: a patch is cut from the middle of the straight piece and pattern-filled
-along the road path, which gives painted road on a road of any shape. The same
-trick puts the ground texture down as a repeating fill instead of flat colour.
+them: a patch cut from the middle of the straight piece, pattern-filled along
+the road path, which gives painted road on a road of any shape. The same trick
+lays the ground texture as a repeating fill instead of flat colour.
 
-Everything lands in ONE atlas plus a generated manifest, because a hundred
-loose props would be a hundred requests.
+Everything lands in ONE atlas plus a generated manifest, because three hundred
+loose props would be three hundred requests.
 
 Output:
     assets/props.png     the atlas
     props-data.js        generated manifest — do not edit by hand
 """
-import argparse, glob, json, os, sys
+import argparse, glob, hashlib, json, os, sys
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, '..'))
 
 ap = argparse.ArgumentParser()
-ap.add_argument('source', help="the pack's PNG dir, holding game_background_1..4")
+ap.add_argument('source', nargs='+',
+                help="one or more PNG dirs, each holding game_background_1..4")
 ap.add_argument('--out', default=os.path.join(ROOT, 'assets'))
 a = ap.parse_args()
 
-# Pack folder -> the name levels use. The kits are not the biomes I had
-# guessed from the composed backgrounds: folder 1 is a bone-strewn desert,
-# 2 a starlit blue, 3 volcanic ash, 4 a mossy meadow.
-BIOMES = [(1, 'desert'), (2, 'frost'), (3, 'ash'), (4, 'meadow')]
+# A substring that identifies a pack -> the four names its backgrounds take.
+# Names describe what the kit looks like, not what the folder is called: the
+# folders are all game_background_1..4 and say nothing.
+#
+# One of the packs supplied was a byte-for-byte duplicate of another. Kits are
+# fingerprinted below and a repeat is skipped rather than packed twice.
+KITS = {
+    'Tower_tileset':   ['desert', 'frost', 'ash', 'meadow'],
+    '305231':          ['volcano', 'mine', 'snow', 'marsh'],
+    '489354':          ['dunes', 'jungle', 'forge', 'deep'],
+}
+
+
+def kit_names(path):
+    for key, names in KITS.items():
+        if key in path:
+            return names
+    return None
 
 GROUND = 256          # ground tile, downscaled from the pack's 512
 ROADTEX = 128         # square patch cut from the middle of a straight road
@@ -50,18 +66,18 @@ CLASS_H = {'tree': 118, 'bush': 44, 'stone': 46, 'decor': 54}
 DECOR_TALL = 96
 
 
-def load(bg, name):
-    p = os.path.join(a.source, f'game_background_{bg}', 'layers', name)
+def load(src, bg, name):
+    p = os.path.join(src, f'game_background_{bg}', 'layers', name)
     return Image.open(p) if os.path.exists(p) else None
 
 
-def road_patch(bg):
+def road_patch(src, bg):
     """A tileable square from inside a straight road piece.
 
     road_5 is the vertical straight: its middle is pure surface with none of
     the wavy dark border, which is drawn separately as a stroke.
     """
-    im = load(bg, 'road_5.png') or load(bg, 'road_6.png')
+    im = load(src, bg, 'road_5.png') or load(src, bg, 'road_6.png')
     if im is None:
         return None
     im = im.convert('RGBA')
@@ -71,9 +87,9 @@ def road_patch(bg):
     return im.crop(box).resize((ROADTEX, ROADTEX), Image.LANCZOS).convert('RGB')
 
 
-def road_colours(bg):
+def road_colours(src, bg):
     """Sample the road's surface and its dark border straight from the art."""
-    im = load(bg, 'road_6.png')
+    im = load(src, bg, 'road_6.png')
     if im is None:
         return ('#d9c08a', '#9a7c4e')
     im = im.convert('RGBA')
@@ -91,11 +107,11 @@ def road_colours(bg):
     return (hexa(mid), hexa(edge))
 
 
-def collect(bg):
+def collect(src, bg):
     out = []
     for cls in ('tree', 'bush', 'stone', 'decor'):
         for p in sorted(glob.glob(os.path.join(
-                a.source, f'game_background_{bg}', 'layers', f'{cls}_*.png'))):
+                src, f'game_background_{bg}', 'layers', f'{cls}_*.png'))):
             im = Image.open(p).convert('RGBA')
             b = im.getbbox()
             if not b:
@@ -113,28 +129,46 @@ def collect(bg):
 
 # ---- lay everything out in one atlas -------------------------------------
 
-cells, manifest = [], {}
-for bg, name in BIOMES:
-    entry = {'props': []}
-    g = load(bg, 'land.png')
-    if g:
-        tile = g.convert('RGB').resize((GROUND, GROUND), Image.LANCZOS)
-        cells.append(('ground:' + name, tile))
-        # Mean luminance, so the renderer can darken a pale kit for road
-        # contrast without crushing one that is already nearly black.
-        px = tile.resize((32, 32)).load()
-        tot = sum(0.299*px[x, y][0] + 0.587*px[x, y][1] + 0.114*px[x, y][2]
-                  for x in range(32) for y in range(32))
-        entry['lum'] = round(tot / (32*32*255), 3)
-    r = road_patch(bg)
-    if r:
-        cells.append(('road:' + name, r))
-    surf, edge = road_colours(bg)
-    entry['road'] = surf
-    entry['roadEdge'] = edge
-    for cls, pname, im in collect(bg):
-        cells.append((f'prop:{name}:{cls}:{pname}', im))
-    manifest[name] = entry
+cells, manifest, seen = [], {}, {}
+for src in a.source:
+    names = kit_names(src)
+    if not names:
+        print(f'  skipped (no KITS entry): {src}')
+        continue
+    for bg, name in enumerate(names, start=1):
+        layers = os.path.join(src, f'game_background_{bg}', 'layers')
+        if not os.path.isdir(layers):
+            continue
+        # Fingerprint the kit by its bytes. One supplied pack duplicated
+        # another exactly, and packing it twice doubles the atlas for nothing.
+        h = hashlib.md5()
+        for f in sorted(glob.glob(os.path.join(layers, '*.png'))):
+            h.update(os.path.basename(f).encode())
+            h.update(open(f, 'rb').read())
+        sig = h.hexdigest()
+        if sig in seen:
+            print(f'  {name:<9} duplicate of {seen[sig]} — skipped')
+            continue
+        seen[sig] = name
+
+        entry = {'props': []}
+        g = load(src, bg, 'land.png')
+        if g:
+            tile = g.convert('RGB').resize((GROUND, GROUND), Image.LANCZOS)
+            cells.append(('ground:' + name, tile))
+            px = tile.resize((32, 32)).load()
+            tot = sum(0.299*px[x, y][0] + 0.587*px[x, y][1] + 0.114*px[x, y][2]
+                      for x in range(32) for y in range(32))
+            entry['lum'] = round(tot / (32*32*255), 3)
+        r = road_patch(src, bg)
+        if r:
+            cells.append(('road:' + name, r))
+        surf, edge = road_colours(src, bg)
+        entry['road'] = surf
+        entry['roadEdge'] = edge
+        for cls, pname, im in collect(src, bg):
+            cells.append((f'prop:{name}:{cls}:{pname}', im))
+        manifest[name] = entry
 
 # Shelf packing, tallest first. Good enough: this runs once, offline.
 cells.sort(key=lambda c: -c[1].height)

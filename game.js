@@ -27,44 +27,50 @@ const MAP_W = 1536, MAP_H = 864;
 // difficulty a lot — a longer road means more time in range, so it plays
 // easier — so these are set from what tools/sim.mjs measures, not by eye.
 const LEVELS = [
-  { id:'landing', name:'FIRST LANDING', palette:'meadow', hp:1.00, seed:20260912,
+  { id:'landing', name:'FIRST LANDING', palette:'meadow', hp:0.72, seed:20260912,
     props:300, decor:620,
     roster:{ fodder:'goblin', fast:'scorpion', heavy:'ogre', boss:'demon' },
+    curve:'standard',
     control:[[-40,700],[240,690],[430,640],[520,500],[660,430],[860,470],
              [980,380],[1010,240],[1200,190],[1400,230],[1580,300]],
     water:[{x:1210,y:585,rx:185,ry:80,rot:-.08}] },
 
-  { id:'palmrun', name:'THE LONG MEADOW', palette:'meadow', hp:1.06, seed:5514,
+  { id:'palmrun', name:'THE LONG MEADOW', palette:'jungle', hp:0.96, seed:5514,
     props:320, decor:640, padGap:170,
     roster:{ fodder:'goblin', fast:'wisp', heavy:'feline', boss:'demon' },
+    curve:'rush',
     control:[[-40,240],[210,220],[390,330],[430,540],[620,660],[830,600],
              [890,420],[1060,300],[1270,330],[1400,520],[1580,620]],
     water:[{x:250,y:660,rx:150,ry:66,rot:.12}] },
 
-  { id:'deepwood', name:'DUST ROAD', palette:'desert', hp:0.98, seed:7712,
+  { id:'deepwood', name:'DUST ROAD', palette:'dunes', hp:0.76, seed:7712,
     props:340, decor:640, padGap:180,
     roster:{ fodder:'raider', fast:'scorpion', heavy:'sentinel', boss:'demon' },
+    curve:'siege',
     control:[[-40,180],[220,200],[400,320],[420,520],[600,640],[820,600],
              [900,430],[1080,330],[1290,380],[1420,560],[1580,660]],
     water:[{x:290,y:700,rx:145,ry:66,rot:.1},{x:1190,y:150,rx:118,ry:56,rot:-.2}] },
 
-  { id:'millpond', name:'MILLPOND', palette:'frost', hp:1.05, seed:41009,
+  { id:'millpond', name:'MILLPOND', palette:'marsh', hp:1.12, seed:41009,
     props:300, decor:600, padGap:186,
     roster:{ fodder:'wisp', fast:'scorpion', heavy:'warden', boss:'demon' },
+    curve:'swarm',
     control:[[-40,620],[220,640],[420,560],[500,380],[700,300],[900,380],
              [1000,560],[1180,640],[1360,560],[1460,380],[1580,300]],
     water:[{x:700,y:640,rx:175,ry:76,rot:0},{x:1180,y:200,rx:130,ry:60,rot:.15}] },
 
-  { id:'frostgate', name:'FROSTGATE', palette:'frost', hp:1.07, seed:33144,
+  { id:'frostgate', name:'FROSTGATE', palette:'snow', hp:0.70, seed:33144,
     props:260, decor:520, padGap:190,
-    roster:{ fodder:'wisp', fast:'raider', heavy:'sentinel', boss:'demon' },
+    roster:{ fodder:'goblin', fast:'raider', heavy:'warden', boss:'demon' },
+    curve:'siege',
     control:[[-40,430],[200,440],[340,300],[540,250],[700,360],[760,570],
              [950,660],[1150,590],[1240,400],[1420,330],[1580,380]],
     water:[{x:520,y:700,rx:160,ry:70,rot:.05}] },
 
-  { id:'longroad', name:'ASHFALL', palette:'ash', hp:1.11, seed:88231,
+  { id:'longroad', name:'ASHFALL', palette:'volcano', hp:0.82, seed:88231,
     props:280, decor:560, padGap:216,
     roster:{ fodder:'wizard', fast:'feline', heavy:'ogre', boss:'demon' },
+    curve:'standard',
     control:[[-40,160],[180,180],[300,360],[240,560],[380,700],[620,700],
              [740,540],[700,340],[860,220],[1080,240],[1180,420],[1120,620],
              [1300,720],[1480,620],[1580,440]],
@@ -84,16 +90,16 @@ const levelById = id => LEVELS.findIndex(l => l.id === id);
 // cheaper now and hit hard enough to hold a lane on their own.
 const TOWERS = {
   fire:   { name:'FIRE TOWER',      art:'tower_fire.png',   cost:100,
-            dmg:24, rate:700,  range:190, shot:520, colour:'#ff9b38' },
+            dmg:27, rate:660,  range:190, shot:520, colour:'#ff9b38' },
   ice:    { name:'ICE TOWER',       art:'tower_ice.png',    cost:110,
             dmg:15, rate:800,  range:180, shot:500, colour:'#8deaff',
-            slow:0.50, slowFor:1600 },
-  bolt:   { name:'LIGHTNING TOWER', art:'tower_bolt.png',   cost:165,
-            dmg:46, rate:1100, range:225, shot:900, colour:'#ffe34d',
-            chain:1, chainRange:150, chainFalloff:0.55 },
-  arcane: { name:'ARCANE TOWER',    art:'tower_arcane.png', cost:155,
-            dmg:21, rate:620,  range:200, shot:470, colour:'#f0563c',
-            splash:88 },
+            slow:0.62, slowFor:1300 },
+  bolt:   { name:'LIGHTNING TOWER', art:'tower_bolt.png',   cost:170,
+            dmg:44, rate:1150, range:225, shot:900, colour:'#ffe34d',
+            chain:2, chainRange:132, chainFalloff:0.34 },
+  arcane: { name:'ARCANE TOWER',    art:'tower_arcane.png', cost:165,
+            dmg:20, rate:660,  range:195, shot:470, colour:'#f0563c',
+            splash:76, splashDmg:0.62 },
 };
 const TOWER_ORDER = ['fire', 'ice', 'bolt', 'arcane'];
 
@@ -122,42 +128,82 @@ function upgradeCost(tower, track) {
 //               fire, lightning, ice. Splash ignores it, so an armoured
 //               roster is arcane's problem to solve.
 //   slowImmune  ice still damages it but no longer slows it.
+//   flying      ignores the road entirely and crosses in a straight line from
+//               where the road enters to where it leaves. Every pad chosen to
+//               cover a bend now covers nothing, which is the point.
+//   regen       heals a fraction of its maximum every second unless it was hit
+//               in the last second and a half. Chip damage stops working;
+//               something has to burst it down.
+//   split       on death becomes N of another kind at the same point on the
+//               road. Killing it is not the end of it.
 //
 // Without these, a roster swap is a reskin: the simulation showed six maps
 // reporting the same result to the wave when only their numbers differed.
 const KINDS = {
   goblin:   { hp:1.00, speed:1.00, size:82,  reward:1.0, armour:1 },
   scorpion: { hp:0.55, speed:1.75, size:68,  reward:1.0, armour:1 },
-  wisp:     { hp:0.34, speed:1.50, size:62,  reward:0.7, armour:1, slowImmune:true },
+  wisp:     { hp:0.62, speed:1.50, size:62,  reward:0.8, armour:1, slowImmune:true,
+              flying:true },
   raider:   { hp:1.14, speed:1.15, size:86,  reward:1.2, armour:1 },
   feline:   { hp:1.80, speed:1.20, size:92,  reward:1.5, armour:1 },
-  wizard:   { hp:1.10, speed:0.90, size:94,  reward:1.8, armour:1 },
+  wizard:   { hp:1.15, speed:0.90, size:94,  reward:1.8, armour:1, regen:0.06 },
   sentinel: { hp:2.20, speed:0.80, size:96,  reward:2.0, armour:0.70 },
   warden:   { hp:2.60, speed:0.62, size:92,  reward:2.2, armour:0.62, slowImmune:true },
-  ogre:     { hp:3.20, speed:0.68, size:112, reward:2.4, armour:1 },
+  ogre:     { hp:2.30, speed:0.68, size:112, reward:2.4, armour:1,
+              split:{ into:'goblin', n:2 } },
   demon:    { hp:16.0, speed:0.55, size:158, reward:9.0, armour:0.85 },
 };
 
-// Waves are written in ROLES, and each level maps roles to kinds. One wave
-// curve, ten kinds, and a level that fields wisps and wardens is a different
-// problem to one fielding goblins and ogres — without rewriting the curve.
-const WAVES = [
-  { fodder:8 },
-  { fodder:12 },
-  { fodder:10, fast:4 },
-  { fodder:12, fast:6 },
-  { fodder:10, heavy:2 },
-  { fodder:14, fast:8 },
-  { fodder:12, fast:4,  heavy:3 },
-  { fodder:16, fast:10 },
-  { fodder:10, heavy:5 },
-  { fodder:8,  boss:1 },
-  { fodder:18, fast:12 },
-  { fodder:14, heavy:6 },
-  { fodder:16, fast:14, heavy:4 },
-  { fodder:20, fast:10, heavy:8 },
-  { fodder:12, heavy:6,  boss:2 },
-];
+// Waves are written in ROLES, and each level maps roles to kinds. One curve,
+// ten kinds, and a level fielding wisps and wardens is a different problem to
+// one fielding goblins and ogres — without rewriting the curve.
+//
+// The curve itself is also per level. Roster alone was not enough: the
+// simulation showed the fodder slot deciding nearly every outcome, because a
+// wave is 8-20 fodder against 2-8 heavies. Changing the SHAPE of the wave
+// changes which slot matters, which is the lever the roster did not have.
+const CURVES = {
+  // The original. Fodder throughout, fast from wave 3, heavies from 5.
+  standard: [
+    { fodder:8 }, { fodder:12 }, { fodder:10, fast:4 }, { fodder:12, fast:6 },
+    { fodder:10, heavy:2 }, { fodder:14, fast:8 }, { fodder:12, fast:4, heavy:3 },
+    { fodder:16, fast:10 }, { fodder:10, heavy:5 }, { fodder:8, boss:1 },
+    { fodder:18, fast:12 }, { fodder:14, heavy:6 }, { fodder:16, fast:14, heavy:4 },
+    { fodder:20, fast:10, heavy:8 }, { fodder:12, heavy:6, boss:2 },
+  ],
+  // Heavies from wave two and barely any fodder. Single-target damage matters
+  // and splash has little to splash.
+  siege: [
+    { fodder:6 }, { heavy:2, fodder:4 }, { heavy:3, fodder:4 },
+    { heavy:4, fast:3 }, { heavy:5, fodder:6 }, { heavy:5, fast:5 },
+    { heavy:5, fodder:5 }, { heavy:6, fast:4 }, { heavy:6, fodder:6 },
+    { heavy:3, boss:1 }, { heavy:7, fast:6 }, { heavy:8, fodder:6 },
+    { heavy:8, fast:8 }, { heavy:9, fodder:8 }, { heavy:6, boss:2 },
+  ],
+  // Almost nothing but fodder, in numbers. Splash and chain earn their cost.
+  swarm: [
+    { fodder:14 }, { fodder:20 }, { fodder:24, fast:4 }, { fodder:28, fast:6 },
+    { fodder:30 }, { fodder:26, fast:12 }, { fodder:34, fast:8 },
+    { fodder:38, fast:12 }, { fodder:30, heavy:3 }, { fodder:20, boss:1 },
+    { fodder:36, fast:12 }, { fodder:32, heavy:4 }, { fodder:38, fast:14 },
+    { fodder:40, fast:12 }, { fodder:24, heavy:5, boss:2 },
+  ],
+  // Fast units front to back, with the fodder thinned out. Slowing matters,
+  // and towers covering only one bend never get a second shot.
+  rush: [
+    { fast:8 }, { fast:12 }, { fast:14, fodder:4 }, { fast:18 },
+    { fast:16, heavy:2 }, { fast:22 }, { fast:20, fodder:8 },
+    { fast:26 }, { fast:18, heavy:4 }, { fast:12, boss:1 },
+    { fast:24, fodder:8 }, { fast:22, heavy:4 }, { fast:28 },
+    { fast:24, heavy:5 }, { fast:18, heavy:3, boss:2 },
+  ],
+};
+const WAVES = CURVES.standard;
+
+function waveSpec(n) {
+  const c = CURVES[LEVELS[S.level].curve] || CURVES.standard;
+  return c[n - 1] || c[c.length - 1];
+}
 
 const DEFAULT_ROSTER =
   { fodder:'goblin', fast:'scorpion', heavy:'ogre', boss:'demon' };
@@ -481,7 +527,7 @@ function startWave(manual) {
     toast(`+${bonus} ENERGY — CALLED EARLY`);
   }
   S.wave++;
-  S.queue = buildQueue(WAVES[S.wave - 1]);
+  S.queue = buildQueue(waveSpec(S.wave));
   S.phase = 'spawning';
   S.spawnIn = 0;
   S.restLeft = 0;
@@ -492,13 +538,30 @@ function spawnInterval() {
   return Math.max(280, 820 - S.wave * 34);
 }
 
-function spawn(kind) {
+// Flyers cross the board in a straight line between the road's two ends, so
+// they need their own route length to know when they have left.
+function routeLen(kind) {
+  if (!KINDS[kind].flying) return S.map.length;
+  const p = S.map.path, a = p[0], b = p[p.length - 1];
+  return Math.hypot(b[0] - a[0], b[1] - a[1]);
+}
+
+function enemyPos(e) {
+  if (!KINDS[e.kind].flying) return pathPointAt(S.map, e.dist);
+  const p = S.map.path, a = p[0], b = p[p.length - 1];
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+  const t = Math.min(1, e.dist / len);
+  return { x: a[0] + (b[0] - a[0]) * t, y: a[1] + (b[1] - a[1]) * t,
+           angle: Math.atan2(b[1] - a[1], b[0] - a[0]) };
+}
+
+function spawn(kind, atDist) {
   const k = KINDS[kind], d = DIFF[S.diff];
   const hp = (66 + S.wave * 30) * k.hp * d.hp * LEVELS[S.level].hp;
   S.enemies.push({
-    kind, dist: 0, hp, maxHp: hp,
+    kind, dist: atDist || 0, hp, maxHp: hp,
     speed: BASE_SPEED * k.speed * d.speed,
-    slowUntil: 0, slowFactor: 1, hurtUntil: 0,
+    slowUntil: 0, slowFactor: 1, hurtUntil: 0, wasSplit: false,
     reward: Math.round((7 + S.wave * 1.6) * k.reward),
     anim: Math.random() * 1000,
     x: 0, y: 0, angle: 0,
@@ -548,6 +611,16 @@ function damage(e, amount, ignoreArmour) {
     // The pack ships a death animation per enemy, so a kill is worth showing.
     // Corpses are display-only: off the path, un-targetable, gone in DIE_MS.
     S.corpses.push({ kind: e.kind, x: e.x, y: e.y, angle: e.angle, t: 0 });
+
+    const k = KINDS[e.kind];
+    if (k.split && !e.wasSplit) {
+      // Spread the children along the road so they do not stack into one
+      // sprite, and mark them so a split cannot cascade forever.
+      for (let i = 0; i < k.split.n; i++) {
+        spawn(k.split.into, Math.max(0, e.dist - 14 + i * 28));
+        S.enemies[S.enemies.length - 1].wasSplit = true;
+      }
+    }
   }
 }
 
@@ -603,11 +676,17 @@ function update(dt) {
   // cached x/y.
   for (const e of S.enemies) {
     if (e.hp <= 0) continue;
+    const ek = KINDS[e.kind];
     const factor = S.time < e.slowUntil ? e.slowFactor : 1;
     e.dist += e.speed * factor * dt / 1000;
-    const p = pathPointAt(S.map, e.dist);
+    // Regeneration is held off by recent damage, so sustained fire beats it
+    // and chip damage does not.
+    if (ek.regen && S.time > e.hurtUntil + 1500 && e.hp < e.maxHp) {
+      e.hp = Math.min(e.maxHp, e.hp + e.maxHp * ek.regen * dt / 1000);
+    }
+    const p = enemyPos(e);
     e.x = p.x; e.y = p.y; e.angle = p.angle;
-    if (e.dist >= S.map.length) {
+    if (e.dist >= routeLen(e.kind)) {
       e.hp = 0;
       e.leaked = true;
       S.lives--;
@@ -651,7 +730,7 @@ function update(dt) {
         e.slowUntil = S.time + def.slowFor;
         e.slowFactor = def.slow;
       }
-      if (def.splash) splash(e.x, e.y, def.splash, s.dmg * 0.7, e);
+      if (def.splash) splash(e.x, e.y, def.splash, s.dmg * (def.splashDmg ?? 0.7), e);
       if (def.chain) chain(s.from, e, def, s.dmg);
       if (!def.splash) {
         // Splash draws its own explosion; a spark on top of it is noise.

@@ -127,21 +127,32 @@ const rows = await page.evaluate(({ only, runs, full, lvlArg, sweep }) => {
     const heavies = kinds.filter(k => KINDS[k].hp >= 1.8 && KINDS[k].hp < 8);
     const fasts   = kinds.filter(k => KINDS[k].speed >= 1.1);
     const fodders = kinds.filter(k => KINDS[k].hp <= 1.3);
+    // Vary the CURVE as well as the roster. Roster alone measures one lever;
+    // a level gets both, and the pair is what decides how many genuinely
+    // different levels can exist.
+    const curves = Object.keys(CURVES);
     const seen = new Map();
     const tried = [];
+    const savedCurve = LEVELS[0].curve, savedHp = LEVELS[0].hp;
+    LEVELS[0].hp = 1.0;          // neutral map, so the LEVERS are what shows
     let n = 0;
-    for (const fo of fodders) for (const fa of fasts) for (const he of heavies) {
-      if (n++ >= sweep) break;
-      LEVELS[0].roster = { fodder:fo, fast:fa, heavy:he, boss:'demon' };
-      const won = [];
-      for (const [name, cfg] of Object.entries(STRATS)) {
-        const r = play(0, 'normal', cfg);
-        if (r.won) won.push(name.split('/')[0]);
+    outer:
+    for (const cv of curves) {
+      for (const fo of fodders) for (const fa of fasts) for (const he of heavies) {
+        if (n++ >= sweep) break outer;
+        LEVELS[0].curve = cv;
+        LEVELS[0].roster = { fodder:fo, fast:fa, heavy:he, boss:'demon' };
+        const won = [];
+        for (const [name, cfg] of Object.entries(STRATS)) {
+          const r = play(0, 'normal', cfg);
+          if (r.won) won.push(name.split('/')[0]);
+        }
+        const key = [...new Set(won)].sort().join(',') || '(none)';
+        seen.set(key, (seen.get(key) || 0) + 1);
+        tried.push({ roster: `${cv}: ${fo}/${fa}/${he}`, key });
       }
-      const key = [...new Set(won)].sort().join(',') || '(none)';
-      seen.set(key, (seen.get(key) || 0) + 1);
-      tried.push({ roster: `${fo}/${fa}/${he}`, key });
     }
+    LEVELS[0].curve = savedCurve; LEVELS[0].hp = savedHp;
     return { sweep: true, tried, distinct: [...seen.entries()] };
   }
 
@@ -164,9 +175,9 @@ const rows = await page.evaluate(({ only, runs, full, lvlArg, sweep }) => {
 }, { only, runs, full, lvlArg, sweep });
 
 if (rows && rows.sweep) {
-  console.log('roster (fodder/fast/heavy)          builds that clear it on normal');
-  for (const t of rows.tried) console.log(`  ${t.roster.padEnd(34)} ${t.key}`);
-  console.log(`\n${rows.tried.length} rosters tried on ONE map, ` +
+  console.log('curve: fodder/fast/heavy                builds that clear it on normal');
+  for (const t of rows.tried) console.log(`  ${t.roster.padEnd(38)} ${t.key}`);
+  console.log(`\n${rows.tried.length} curve+roster pairs on ONE map, ` +
     `${rows.distinct.length} distinct outcomes:`);
   for (const [k, n] of rows.distinct.sort((a, b) => b[1] - a[1])) {
     console.log(`  x${String(n).padStart(2)}  ${k}`);

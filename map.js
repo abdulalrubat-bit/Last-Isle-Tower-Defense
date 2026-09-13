@@ -37,6 +37,35 @@ function shade(hex, f) {
   return `rgb(${c((n >> 16) & 255)},${c((n >> 8) & 255)},${c(n & 255)})`;
 }
 
+/* A drawn palette for every biome, including the eight that only exist as
+   painted kits. PALETTES holds hand-written ones; anything else is derived
+   from the atlas's sampled road colours and ground luminance. Only water, the
+   shadow tone and the drawn-prop fallback read from it — the ground, the road
+   and the props all come from the art — but it must exist, because
+   `PALETTES[name] || PALETTES.island` returned undefined the moment a level
+   named a kit with no hand-written entry, and undefined reaches drawWater. */
+const DERIVED = {};
+function paletteFor(biome) {
+  if (PALETTES[biome]) return PALETTES[biome];
+  if (DERIVED[biome]) return DERIVED[biome];
+  const m = (typeof PROP_ATLAS !== 'undefined' && PROP_ATLAS[biome]) || null;
+  const base = PALETTES.meadow;
+  if (!m) return base;
+  const lum = m.lum ?? 0.6;
+  const cold = lum < 0.45;
+  DERIVED[biome] = Object.assign({}, base, {
+    road: m.road, roadLo: m.road, roadEdge: m.roadEdge,
+    roadInk: shade(m.roadEdge, 0.45),
+    // Dark kits get a colder, deeper pool; pale ones keep the bright water.
+    water: cold ? '#2f7fb4' : '#3ba0dd',
+    waterDeep: cold ? '#215f88' : '#2a7fb8',
+    waterRim: cold ? '#6fb6dd' : '#8ad6f5',
+    shore: m.roadEdge,
+    shadow: cold ? 'rgba(6,10,16,.34)' : 'rgba(24,54,18,.22)',
+  });
+  return DERIVED[biome];
+}
+
 function ATLAS_FOR(biome) {
   return (ATLAS_IMG && typeof PROP_ATLAS !== 'undefined' && PROP_ATLAS[biome])
     ? PROP_ATLAS[biome] : null;
@@ -180,7 +209,7 @@ function derivePads(path, water, W, H, minGap) {
 }
 
 function buildLevel(spec, W, H) {
-  const pal = PALETTES[spec.palette] || PALETTES.island;
+  const pal = paletteFor(spec.palette);
   const path = sampleSpline(spec.control, 12);
   const water = spec.water || [];
   const pads = derivePads(path, water, W, H, spec.padGap || 152);
@@ -274,7 +303,8 @@ function outlined(ctx, ink, width, drawPath, fill) {
 }
 
 function renderLevel(level, canvasFactory) {
-  const { W, H, pal } = level;
+  const { W, H } = level;
+  const pal = level.pal || paletteFor(level.spec.palette);
   const cv = canvasFactory(W, H);
   const ctx = cv.getContext('2d');
   const rand = rng(level.spec.seed ^ 0x9e37);

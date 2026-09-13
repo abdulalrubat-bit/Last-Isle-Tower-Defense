@@ -20,7 +20,7 @@ props-data.js  GENERATED atlas manifest — tools/build-props.py writes it
 towers-data.js GENERATED atlas manifest — tools/build-towers.py writes it
 fx-data.js     GENERATED atlas manifest — tools/build-fx.py writes it
 game.js        the game, and the campaign
-assets/        58 files, 1.2MB — prop, tower and fx atlases, enemy sheets, UI
+assets/        58 files, 1.4MB — prop, tower and fx atlases, enemy sheets, UI
 sw.js          offline cache — generated, run tools/stamp-sw.py
 tools/         props, towers, fx, enemy sheets, sprites, balance sim, stamper
 ```
@@ -53,8 +53,8 @@ inversion is a win:
   sides, auto-rejecting anything near water, the map edge or another pad.
 - **Pad distance is one constant.** It is also the single most important number
   in the balance — see below — and it can no longer drift per map.
-- **Biome is a kit swap.** Meadow, desert, frost and ash are the same renderer
-  with a different ground tile, road texture and prop set.
+- **Biome is a kit swap.** Twelve kits, all the same renderer with a different
+  ground tile, road texture and prop set.
 - **Level select thumbnails are free**: the same renderer at card size.
 - **The menu backdrop is a level** — the furthest one unlocked.
 - **A new map costs about ten lines and zero bytes.**
@@ -151,37 +151,35 @@ map with ninety painted props costs one `drawImage` per frame.
 ## How many different levels are actually possible
 
 Not a rhetorical question — `tools/sim.mjs --rosters N` measures it. It holds
-the map, the wave curve and the difficulty fixed, changes only which enemies
-fill the roles, and reports which of five build strategies clear each result.
-Two levels that the same builds beat are the same puzzle in different scenery.
+the map and difficulty fixed, varies the **wave curve and the roster**, and
+reports which of five build strategies clears each result. Two levels the same
+builds beat are the same puzzle in different scenery.
 
-Forty rosters on one map produced **six distinct outcomes**, and thirty-one of
-the forty fell into just two of them. The current six-level campaign produces
-**two**.
+**Visually: twelve biome kits × any path you draw × any seed.** Effectively
+unlimited; the kits start repeating somewhere past twenty levels.
 
-The reason is worth knowing before designing more levels:
+**Mechanically: five or six distinct puzzles**, each tunable to several
+difficulty points. Sixty-four curve+roster pairs on a neutral map produced six
+distinct outcomes. The six-level campaign uses four of them.
 
-- **The `fodder` slot decides almost everything.** Every `goblin/scorpion/*`
-  roster gives an identical answer regardless of the heavy. Swap the fodder and
-  the answer changes; swap the heavy and it usually does not.
-- **Because fodder is the mass.** A wave is 8–20 fodder and 2–8 heavies, so
-  the fodder is what the towers spend their time shooting.
+Three levers decide that number, and they were built in the order they matter:
 
-So the ceiling on *mechanically* distinct levels is not the ten enemy types or
-the four biomes or the path geometry — all of which are effectively unlimited.
-It is the number of ways a wave's **mass** can differ, which right now is about
-five or six.
+- **The roster.** Which kinds fill fodder / fast / heavy / boss. Alone it gave
+  six outcomes from forty rosters, but thirty-one fell into two buckets,
+  because the **fodder slot decided nearly everything** — a wave is 8–20 fodder
+  against 2–8 heavies, so the fodder is what the towers spend their time
+  shooting.
+- **The curve.** `standard`, `siege` (heavies from wave two, little fodder),
+  `swarm` (almost nothing but fodder, in numbers), `rush` (fast units front to
+  back). This is the lever the roster did not have: it changes which *slot*
+  matters, so the fodder stops deciding alone.
+- **Counter-mechanics.** `armour` (splash ignores it), `slowImmune`, `flying`
+  (crosses in a straight line between the road's two ends, so every pad chosen
+  to cover a bend covers nothing), `regen` (heals unless hit recently, so chip
+  damage stops working), `split` (on death becomes two of something else).
 
-Raising it means raising what a level can vary, not how many levels there are:
-
-- **Per-level wave curves.** The curve is global; a level that opens with
-  heavies, or never sends fodder at all, is a different problem before any
-  roster is chosen.
-- **More counter-mechanics.** `armour` (splash ignores it) and `slowImmune` are
-  the only two, and they are what produced the six outcomes above rather than
-  one. Flying, regenerating, or splitting-on-death would each add a dimension.
-- **Making heavies matter.** More of them per wave, or tankier, would put a
-  second slot in play instead of leaving the fodder to decide alone.
+Raising the number further means another lever, not another level. A second
+spawn point, or towers that can be repositioned, would each add one.
 
 ## Balance
 
@@ -360,11 +358,12 @@ Deliberate omissions, not oversights:
 - **Only walk and die are used.** The pack also ships attack, hurt, idle, jump
   and run per type. An attack animation when something reaches the end is
   art-complete and code-only.
-- **arcane+ice beats every level.** It is in the winning set for all six, and
-  across a forty-roster sweep it never lost. That is a tower balance problem,
-  not a level one, and the sim will find it again the moment the numbers move.
-- **The `heavy` role barely matters.** See below — the mass of a wave decides
-  the answer, and heavies are a handful per wave.
+- **Water is still drawn, not painted**, and it shows most on the dark kits —
+  a bright pond in a volcano should probably be lava. The packs ship a
+  `lake.png` per kit that nothing uses.
+- **`mixed` clears every level.** A balanced build being universally viable is
+  correct; the thing worth watching is whether a *specialised* build ever wins
+  everything, which is what the sim's per-level answer list is for.
 - **No music.** The toggle persists and the sound effects are synthesised.
 - **No achievements.** The pack has a window for them; nothing opens it,
   because there are no achievements yet to put in it.
