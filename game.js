@@ -1083,6 +1083,7 @@ function openUpgrade(t) {
   S.running = false;
   renderUpgrade();
   show('upgradeOverlay', true);
+  pushBack();
 }
 function closeUpgrade() {
   S.openTower = null;
@@ -1215,15 +1216,22 @@ function totalStars() {
 
 // Thumbnails come free: the same renderer, at card size. There is no art to
 // draw, cache or ship for them.
-// Cached as a data URL rather than as a <canvas>: cloneNode on a canvas
-// copies the element and none of its bitmap, so every card drew blank.
+// Cached as a canvas, and COPIED into a fresh canvas per card.
+//
+// Two traps here, one after the other. cloneNode on a canvas copies the
+// element and none of its bitmap, so the first version drew blank cards. The
+// fix — cache a data URL and use an <img> — works over http and throws from
+// file://: drawing the prop atlas taints the canvas, toDataURL refuses, and
+// the level select comes up EMPTY. That is exactly the Android WebView case,
+// where the app loads from file:// and there is no server to be same-origin
+// with. Copying canvas to canvas needs no export and works in both.
 const thumbCache = {};
 function levelThumb(spec) {
   if (!thumbCache[spec.id]) {
     const full = renderLevel(buildLevel(spec, MAP_W, MAP_H), makeCanvas);
     const t = makeCanvas(384, 216);
     t.getContext('2d').drawImage(full, 0, 0, 384, 216);
-    thumbCache[spec.id] = t.toDataURL('image/webp', 0.8);
+    thumbCache[spec.id] = t;
   }
   return thumbCache[spec.id];
 }
@@ -1240,10 +1248,10 @@ function openLevels() {
     card.setAttribute('aria-label',
       `${lvl.name}${open ? `, ${stars} of 3 stars` : ', locked'}`);
 
-    const shot = new Image();
+    const shot = makeCanvas(384, 216);
     shot.className = 'thumb';
-    shot.alt = '';
-    shot.src = levelThumb(lvl);
+    shot.setAttribute('aria-hidden', 'true');
+    shot.getContext('2d').drawImage(levelThumb(lvl), 0, 0);
     card.appendChild(shot);
 
     const cap = document.createElement('div');
@@ -1258,11 +1266,13 @@ function openLevels() {
     card.addEventListener('click', () => {
       S.level = i;
       show('diffOverlay', true);
+      pushBack();
     });
     grid.appendChild(card);
   });
   el('levelTotal').textContent = `${totalStars()} / ${LEVELS.length * 3} STARS`;
   show('levelOverlay', true);
+  pushBack();
 }
 
 function toMenu() {
@@ -1381,6 +1391,38 @@ el('btnSound').addEventListener('click', e => {
   e.currentTarget.querySelector('img').src =
     'assets/' + (save.sound ? 'btn_sound.png' : 'btn_sound_off.png');
   if (save.sound) sfx('build');
+});
+
+/* Android's back button.
+ *
+ * A WebView with no history has exactly one response to back: close the app.
+ * From inside a level that loses the run; from the level select it is merely
+ * wrong. Each overlay pushes a history entry when it opens, so back pops that
+ * entry instead and the handler closes the topmost thing. Only a back press
+ * with nothing open falls through to leaving.
+ */
+let backDepth = 0;
+function pushBack() {
+  backDepth++;
+  try { history.pushState({ td: backDepth }, ''); } catch (_) {}
+}
+function closeTopmost() {
+  if (el('upgradeOverlay').classList.contains('show')) { closeUpgrade(); return true; }
+  if (el('diffOverlay').classList.contains('show')) {
+    show('diffOverlay', false); return true;
+  }
+  if (el('levelOverlay').classList.contains('show')) {
+    show('levelOverlay', false); return true;
+  }
+  if (el('resultOverlay').classList.contains('show')) { toMenu(); return true; }
+  // In a level with nothing open: back returns to the menu rather than
+  // quitting the app, which is what a player means by it.
+  if (S.screen === 'play') { toMenu(); return true; }
+  return false;
+}
+addEventListener('popstate', () => {
+  if (backDepth > 0) backDepth--;
+  if (closeTopmost()) pushBack();     // stay one entry deep while anything is open
 });
 
 addEventListener('keydown', e => {

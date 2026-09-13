@@ -1,0 +1,4 @@
+# The verification tools (tools/sim.mjs, tools/full.mjs) need Playwright, which
+# is a dev dependency of the tooling and not of the game. The game itself ships
+# no npm packages — index.html loads plain scripts.
+node_modules/
