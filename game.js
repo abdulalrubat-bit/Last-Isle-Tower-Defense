@@ -235,7 +235,26 @@ function loadAssets() {
 }
 
 // Animations are { img, fw, fh, count }, whether loaded or drawn.
-const RUN_FRAMES = {}, DIE_FRAMES = {};
+const RUN_FRAMES = {}, DIE_FRAMES = {}, FLASH_FRAMES = {};
+const HURT_MS = 130;
+
+// A white copy of each walk sheet, composited once at load. Drawn over the
+// sprite at a decaying alpha when the enemy is hit, so every shot visibly
+// connects. Tinting per hit per frame would be a composite pass in the middle
+// of the busiest moment on the board; this is a second drawImage.
+function bakeHurtFlash() {
+  for (const kind of Object.keys(RUN_FRAMES)) {
+    const a = RUN_FRAMES[kind];
+    if (!a) continue;
+    const cv = makeCanvas(a.fw * a.count, a.fh);
+    const c = cv.getContext('2d');
+    c.drawImage(a.img, 0, 0, a.fw * a.count, a.fh, 0, 0, a.fw * a.count, a.fh);
+    c.globalCompositeOperation = 'source-atop';
+    c.fillStyle = '#fff';
+    c.fillRect(0, 0, cv.width, cv.height);
+    FLASH_FRAMES[kind] = { img: cv, fw: a.fw, fh: a.fh, count: a.count };
+  }
+}
 
 function loadSheet(file, count) {
   return new Promise(resolve => {
@@ -334,6 +353,7 @@ function bakeEnemyFrames() {
   for (const kind of Object.keys(KINDS)) {
     if (!RUN_FRAMES[kind]) RUN_FRAMES[kind] = drawn[kind];
   }
+  bakeHurtFlash();
 }
 
 /* --------------------------------------------------------------- audio --- */
@@ -438,7 +458,7 @@ function spawn(kind) {
   S.enemies.push({
     kind, dist: 0, hp, maxHp: hp,
     speed: BASE_SPEED * k.speed * d.speed,
-    slowUntil: 0, slowFactor: 1,
+    slowUntil: 0, slowFactor: 1, hurtUntil: 0,
     reward: Math.round((7 + S.wave * 1.6) * k.reward),
     anim: Math.random() * 1000,
     x: 0, y: 0, angle: 0,
@@ -480,6 +500,7 @@ function finish(won) {
 function damage(e, amount) {
   if (e.hp <= 0) return;
   e.hp -= amount;
+  e.hurtUntil = S.time + HURT_MS;
   if (e.hp <= 0) {
     S.energy += e.reward;
     S.score += e.reward;
@@ -776,6 +797,11 @@ function drawEnemies() {
       ctx.shadowBlur = 14;
     }
     blitEnemy(anim, e.kind, e.x, e.y, e.angle, frame);
+    const flash = FLASH_FRAMES[e.kind];
+    if (flash && S.time < e.hurtUntil) {
+      ctx.globalAlpha = 0.78 * ((e.hurtUntil - S.time) / HURT_MS);
+      blitEnemy(flash, e.kind, e.x, e.y, e.angle, frame);
+    }
     ctx.restore();
 
     const w = Math.max(34, k.size * 0.52);
