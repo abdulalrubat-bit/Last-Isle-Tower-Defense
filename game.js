@@ -29,36 +29,42 @@ const MAP_W = 1536, MAP_H = 864;
 const LEVELS = [
   { id:'landing', name:'FIRST LANDING', palette:'meadow', hp:1.00, seed:20260912,
     props:300, decor:620,
+    roster:{ fodder:'goblin', fast:'scorpion', heavy:'ogre', boss:'demon' },
     control:[[-40,700],[240,690],[430,640],[520,500],[660,430],[860,470],
              [980,380],[1010,240],[1200,190],[1400,230],[1580,300]],
     water:[{x:1210,y:585,rx:185,ry:80,rot:-.08}] },
 
   { id:'palmrun', name:'THE LONG MEADOW', palette:'meadow', hp:1.06, seed:5514,
     props:320, decor:640, padGap:170,
+    roster:{ fodder:'goblin', fast:'wisp', heavy:'feline', boss:'demon' },
     control:[[-40,240],[210,220],[390,330],[430,540],[620,660],[830,600],
              [890,420],[1060,300],[1270,330],[1400,520],[1580,620]],
     water:[{x:250,y:660,rx:150,ry:66,rot:.12}] },
 
-  { id:'deepwood', name:'DUST ROAD', palette:'desert', hp:1.07, seed:7712,
+  { id:'deepwood', name:'DUST ROAD', palette:'desert', hp:0.98, seed:7712,
     props:340, decor:640, padGap:180,
+    roster:{ fodder:'raider', fast:'scorpion', heavy:'sentinel', boss:'demon' },
     control:[[-40,180],[220,200],[400,320],[420,520],[600,640],[820,600],
              [900,430],[1080,330],[1290,380],[1420,560],[1580,660]],
     water:[{x:290,y:700,rx:145,ry:66,rot:.1},{x:1190,y:150,rx:118,ry:56,rot:-.2}] },
 
   { id:'millpond', name:'MILLPOND', palette:'frost', hp:1.05, seed:41009,
     props:300, decor:600, padGap:186,
+    roster:{ fodder:'wisp', fast:'scorpion', heavy:'warden', boss:'demon' },
     control:[[-40,620],[220,640],[420,560],[500,380],[700,300],[900,380],
              [1000,560],[1180,640],[1360,560],[1460,380],[1580,300]],
     water:[{x:700,y:640,rx:175,ry:76,rot:0},{x:1180,y:200,rx:130,ry:60,rot:.15}] },
 
   { id:'frostgate', name:'FROSTGATE', palette:'frost', hp:1.07, seed:33144,
     props:260, decor:520, padGap:190,
+    roster:{ fodder:'wisp', fast:'raider', heavy:'sentinel', boss:'demon' },
     control:[[-40,430],[200,440],[340,300],[540,250],[700,360],[760,570],
              [950,660],[1150,590],[1240,400],[1420,330],[1580,380]],
     water:[{x:520,y:700,rx:160,ry:70,rot:.05}] },
 
   { id:'longroad', name:'ASHFALL', palette:'ash', hp:1.11, seed:88231,
     props:280, decor:560, padGap:216,
+    roster:{ fodder:'wizard', fast:'feline', heavy:'ogre', boss:'demon' },
     control:[[-40,160],[180,180],[300,360],[240,560],[380,700],[620,700],
              [740,540],[700,340],[860,220],[1080,240],[1180,420],[1120,620],
              [1300,720],[1480,620],[1580,440]],
@@ -106,34 +112,55 @@ function upgradeCost(tower, track) {
   return Math.round(TOWERS[tower.type].cost * 0.55 * Math.pow(1.65, lvl));
 }
 
-// `size` is the drawn height in map pixels and is the main thing telling the
-// player what is coming, so the four are deliberately far apart.
+// Ten kinds, all from the pack. `size` is the drawn height and is the main
+// thing telling a player what is coming, so they are spread wide.
+//
+// Two stats decide WHICH tower answers a kind, and they are what makes one
+// level's roster a different problem to another's:
+//
+//   armour      multiplies damage from anything that hits a single target —
+//               fire, lightning, ice. Splash ignores it, so an armoured
+//               roster is arcane's problem to solve.
+//   slowImmune  ice still damages it but no longer slows it.
+//
+// Without these, a roster swap is a reskin: the simulation showed six maps
+// reporting the same result to the wave when only their numbers differed.
 const KINDS = {
-  grunt:  { hp:1,    speed:1,    size:82,  reward:1 },
-  runner: { hp:0.55, speed:1.75, size:68,  reward:1 },
-  brute:  { hp:3.2,  speed:0.68, size:112, reward:2.4 },
-  boss:   { hp:16,   speed:0.55, size:158, reward:9 },
+  goblin:   { hp:1.00, speed:1.00, size:82,  reward:1.0, armour:1 },
+  scorpion: { hp:0.55, speed:1.75, size:68,  reward:1.0, armour:1 },
+  wisp:     { hp:0.34, speed:1.50, size:62,  reward:0.7, armour:1, slowImmune:true },
+  raider:   { hp:1.14, speed:1.15, size:86,  reward:1.2, armour:1 },
+  feline:   { hp:1.80, speed:1.20, size:92,  reward:1.5, armour:1 },
+  wizard:   { hp:1.10, speed:0.90, size:94,  reward:1.8, armour:1 },
+  sentinel: { hp:2.20, speed:0.80, size:96,  reward:2.0, armour:0.70 },
+  warden:   { hp:2.60, speed:0.62, size:92,  reward:2.2, armour:0.62, slowImmune:true },
+  ogre:     { hp:3.20, speed:0.68, size:112, reward:2.4, armour:1 },
+  demon:    { hp:16.0, speed:0.55, size:158, reward:9.0, armour:0.85 },
 };
 
-// Fifteen waves and then it is over. A tower defence you cannot finish is a
-// score attack wearing a campaign's clothes.
+// Waves are written in ROLES, and each level maps roles to kinds. One wave
+// curve, ten kinds, and a level that fields wisps and wardens is a different
+// problem to one fielding goblins and ogres — without rewriting the curve.
 const WAVES = [
-  { grunt:8 },
-  { grunt:12 },
-  { grunt:10, runner:4 },
-  { grunt:12, runner:6 },
-  { grunt:10, brute:2 },
-  { grunt:14, runner:8 },
-  { grunt:12, runner:4, brute:3 },
-  { grunt:16, runner:10 },
-  { grunt:10, brute:5 },
-  { grunt:8,  boss:1 },
-  { grunt:18, runner:12 },
-  { grunt:14, brute:6 },
-  { grunt:16, runner:14, brute:4 },
-  { grunt:20, runner:10, brute:8 },
-  { grunt:12, brute:6,   boss:2 },
+  { fodder:8 },
+  { fodder:12 },
+  { fodder:10, fast:4 },
+  { fodder:12, fast:6 },
+  { fodder:10, heavy:2 },
+  { fodder:14, fast:8 },
+  { fodder:12, fast:4,  heavy:3 },
+  { fodder:16, fast:10 },
+  { fodder:10, heavy:5 },
+  { fodder:8,  boss:1 },
+  { fodder:18, fast:12 },
+  { fodder:14, heavy:6 },
+  { fodder:16, fast:14, heavy:4 },
+  { fodder:20, fast:10, heavy:8 },
+  { fodder:12, heavy:6,  boss:2 },
 ];
+
+const DEFAULT_ROSTER =
+  { fodder:'goblin', fast:'scorpion', heavy:'ogre', boss:'demon' };
 
 // Starting energy is deliberately the same order on all three: it must buy an
 // opening of three towers everywhere. Difficulty is the enemies and the life
@@ -210,12 +237,17 @@ const ASSET_NAMES = [
 // back to the version enemies.js draws, which is what shipped before the art
 // arrived and is still what runs if a sheet is missing.
 const ENEMY_ART = {
-  grunt:  { walk:'enemy_grunt_walk.png',  die:'enemy_grunt_die.png',  walkN:10, dieN:8 },
-  runner: { walk:'enemy_runner_walk.png', die:'enemy_runner_die.png', walkN:10, dieN:8 },
-  brute:  { walk:'enemy_brute_walk.png',  die:'enemy_brute_die.png',  walkN:10, dieN:8 },
-  boss:   { walk:'enemy_boss_walk.png',   die:'enemy_boss_die.png',   walkN:10, dieN:8 },
-};
-const DIE_MS = 700;
+  goblin:   { walk:'enemy_goblin_walk.png', die:'enemy_goblin_die.png', walkN:8, dieN:6 },
+  scorpion: { walk:'enemy_scorpion_walk.png', die:'enemy_scorpion_die.png', walkN:8, dieN:6 },
+  wisp:     { walk:'enemy_wisp_walk.png', die:'enemy_wisp_die.png', walkN:8, dieN:6 },
+  raider:   { walk:'enemy_raider_walk.png', die:'enemy_raider_die.png', walkN:8, dieN:6 },
+  feline:   { walk:'enemy_feline_walk.png', die:'enemy_feline_die.png', walkN:8, dieN:6 },
+  wizard:   { walk:'enemy_wizard_walk.png', die:'enemy_wizard_die.png', walkN:8, dieN:6 },
+  sentinel: { walk:'enemy_sentinel_walk.png', die:'enemy_sentinel_die.png', walkN:8, dieN:6 },
+  warden:   { walk:'enemy_warden_walk.png', die:'enemy_warden_die.png', walkN:8, dieN:6 },
+  ogre:     { walk:'enemy_ogre_walk.png', die:'enemy_ogre_die.png', walkN:8, dieN:6 },
+  demon:    { walk:'enemy_demon_walk.png', die:'enemy_demon_die.png', walkN:8, dieN:6 },
+};const DIE_MS = 700;
 
 const bootBar = document.getElementById('bootBar');
 const bootSay = document.getElementById('bootSay');
@@ -421,16 +453,24 @@ function toMap(clientX, clientY) {
 
 /* ----------------------------------------------------------- wave logic -- */
 
+function roleKind(role) {
+  const r = LEVELS[S.level].roster || DEFAULT_ROSTER;
+  return r[role] || DEFAULT_ROSTER[role];
+}
+
 function buildQueue(spec) {
   // Interleave the kinds rather than marching them out in blocks, so a wave
   // reads as a mixed group instead of four separate mini-waves.
-  const pools = Object.entries(spec).flatMap(([k, n]) => Array(n).fill(k));
+  const pools = Object.entries(spec)
+    .flatMap(([role, n]) => Array(n).fill(roleKind(role)));
   for (let i = pools.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [pools[i], pools[j]] = [pools[j], pools[i]];
   }
   // Bosses last: they should arrive as the punctuation, not the opening.
-  return pools.sort((a, b) => (a === 'boss' ? 1 : 0) - (b === 'boss' ? 1 : 0));
+  const bossKind = roleKind('boss');
+  return pools.sort((a, b) =>
+    (a === bossKind ? 1 : 0) - (b === bossKind ? 1 : 0));
 }
 
 function startWave(manual) {
@@ -497,9 +537,9 @@ function finish(won) {
 
 /* ------------------------------------------------------------- combat ---- */
 
-function damage(e, amount) {
+function damage(e, amount, ignoreArmour) {
   if (e.hp <= 0) return;
-  e.hp -= amount;
+  e.hp -= ignoreArmour ? amount : amount * (KINDS[e.kind].armour ?? 1);
   e.hurtUntil = S.time + HURT_MS;
   if (e.hp <= 0) {
     S.energy += e.reward;
@@ -515,7 +555,8 @@ function splash(x, y, radius, dmg, source) {
   for (const e of S.enemies) {
     if (e.hp <= 0 || e === source) continue;
     const d = Math.hypot(e.x - x, e.y - y);
-    if (d <= radius) damage(e, dmg * (1 - 0.5 * d / radius));
+    // Splash ignores armour: it is the answer to an armoured roster.
+    if (d <= radius) damage(e, dmg * (1 - 0.5 * d / radius), true);
   }
   S.fx.push({ kind: 'boom', x, y, r: radius, ttl: 420, life: 420 });
 }
@@ -606,7 +647,10 @@ function update(dt) {
     if (d <= step + 12) {
       const def = TOWERS[s.type];
       damage(e, s.dmg);
-      if (def.slow) { e.slowUntil = S.time + def.slowFor; e.slowFactor = def.slow; }
+      if (def.slow && !KINDS[e.kind].slowImmune) {
+        e.slowUntil = S.time + def.slowFor;
+        e.slowFactor = def.slow;
+      }
       if (def.splash) splash(e.x, e.y, def.splash, s.dmg * 0.7, e);
       if (def.chain) chain(s.from, e, def, s.dmg);
       if (!def.splash) {
@@ -808,7 +852,7 @@ function drawEnemies() {
     const top = e.y + k.size * 0.20 - k.size - 10;
     ctx.fillStyle = '#24150d';
     ctx.fillRect(e.x - w / 2, top, w, 6);
-    ctx.fillStyle = e.kind === 'boss' ? '#c46bff' : '#e94332';
+    ctx.fillStyle = KINDS[e.kind].hp >= 8 ? '#c46bff' : '#e94332';
     ctx.fillRect(e.x - w / 2, top, w * Math.max(0, e.hp / e.maxHp), 6);
   }
 }

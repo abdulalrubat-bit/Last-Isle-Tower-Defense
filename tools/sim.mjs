@@ -34,6 +34,7 @@ const only = args.includes('--strategy') ? args[args.indexOf('--strategy') + 1] 
 const runs = args.includes('--runs') ? Number(args[args.indexOf('--runs') + 1]) : 1;
 const full = args.includes('--full');      // every strategy x level x difficulty
 const lvlArg = args.includes('--level') ? args[args.indexOf('--level') + 1] : null;
+const sweep = args.includes('--rosters') ? Number(args[args.indexOf('--rosters') + 1]) : 0;
 
 const srv = http.createServer((q, r) => {
   let f = decodeURIComponent(q.url.split('?')[0]);
@@ -53,7 +54,7 @@ page.on('pageerror', e => errors.push(e.message));
 await page.goto('http://localhost:8731/', { waitUntil: 'networkidle' });
 await page.waitForFunction(() => !document.getElementById('boot'), null, { timeout: 20000 });
 
-const rows = await page.evaluate(({ only, runs, full, lvlArg }) => {
+const rows = await page.evaluate(({ only, runs, full, lvlArg, sweep }) => {
   const STRATS = {
     'mixed/cheapest':    { build:['fire','fire','bolt','ice','arcane','fire','bolt','arcane','ice','bolt','fire'], pick:'cheap' },
     'mixed/damage':      { build:['fire','fire','bolt','ice','arcane','fire','bolt','arcane','ice','bolt','fire'], pick:'dmg' },
@@ -119,6 +120,31 @@ const rows = await page.evaluate(({ only, runs, full, lvlArg }) => {
            : S.lives >= d.lives*0.55 ? 2 : 1 };
   }
 
+  if (sweep) {
+    // Same map, same wave curve, same difficulty — only the roster changes.
+    // Anything that differs in the result is the roster's doing.
+    const kinds = Object.keys(KINDS);
+    const heavies = kinds.filter(k => KINDS[k].hp >= 1.8 && KINDS[k].hp < 8);
+    const fasts   = kinds.filter(k => KINDS[k].speed >= 1.1);
+    const fodders = kinds.filter(k => KINDS[k].hp <= 1.3);
+    const seen = new Map();
+    const tried = [];
+    let n = 0;
+    for (const fo of fodders) for (const fa of fasts) for (const he of heavies) {
+      if (n++ >= sweep) break;
+      LEVELS[0].roster = { fodder:fo, fast:fa, heavy:he, boss:'demon' };
+      const won = [];
+      for (const [name, cfg] of Object.entries(STRATS)) {
+        const r = play(0, 'normal', cfg);
+        if (r.won) won.push(name.split('/')[0]);
+      }
+      const key = [...new Set(won)].sort().join(',') || '(none)';
+      seen.set(key, (seen.get(key) || 0) + 1);
+      tried.push({ roster: `${fo}/${fa}/${he}`, key });
+    }
+    return { sweep: true, tried, distinct: [...seen.entries()] };
+  }
+
   const out = [];
   const levels = lvlArg == null ? LEVELS.map((_, i) => i)
                                 : [LEVELS.findIndex(l => l.id === lvlArg)].filter(i => i >= 0);
@@ -135,7 +161,18 @@ const rows = await page.evaluate(({ only, runs, full, lvlArg }) => {
     }
   }
   return out;
-}, { only, runs, full, lvlArg });
+}, { only, runs, full, lvlArg, sweep });
+
+if (rows && rows.sweep) {
+  console.log('roster (fodder/fast/heavy)          builds that clear it on normal');
+  for (const t of rows.tried) console.log(`  ${t.roster.padEnd(34)} ${t.key}`);
+  console.log(`\n${rows.tried.length} rosters tried on ONE map, ` +
+    `${rows.distinct.length} distinct outcomes:`);
+  for (const [k, n] of rows.distinct.sort((a, b) => b[1] - a[1])) {
+    console.log(`  x${String(n).padStart(2)}  ${k}`);
+  }
+  await browser.close(); srv.close(); process.exit(0);
+}
 
 if (full || only) {
   console.log('level        diff    strategy              result  wave   lives  score');
@@ -166,6 +203,22 @@ if (full || only) {
   console.log('Healthy: easy mostly cleared, normal cleared by several builds,');
   console.log('hard cleared by one or two. A level nothing clears is a wall;');
   console.log('a level everything clears is not asking anything.');
+
+  // Which builds clear each level on normal. This is the test of whether two
+  // levels are actually different problems or the same one reskinned: if the
+  // set of builds that beat them is identical, so are the levels.
+  console.log('\nBuilds that clear each level on NORMAL:');
+  const sets = new Map();
+  for (const lvl of [...new Set(rows.map(r => r.level))]) {
+    const won = rows.filter(r => r.level === lvl && r.diff === 'normal' && r.won)
+                    .map(r => r.strat.split('/')[0]);
+    const key = [...new Set(won)].sort().join(',');
+    sets.set(key, (sets.get(key) || 0) + 1);
+    console.log(`  ${lvl.padEnd(12)} ${key || '(none)'}`);
+  }
+  console.log(`\n${sets.size} distinct answer(s) across ` +
+    `${[...new Set(rows.map(r => r.level))].length} levels. Levels sharing an ` +
+    'answer\nare the same puzzle wearing different scenery.');
 }
 if (errors.length) { console.log('ERRORS:\n' + errors.join('\n')); process.exitCode = 1; }
 

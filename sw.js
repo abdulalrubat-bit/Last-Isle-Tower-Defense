@@ -7,7 +7,7 @@
  * by hand it is a key someone forgets to bump, and a forgotten bump strands a
  * player on an old build with no way to know it.
  */
-const VERSION = 'b39637436ce6';
+const VERSION = '7663a462ed89';
 const CACHE = 'islanddefence-' + VERSION;
 
 const SHELL = [
@@ -40,14 +40,26 @@ const SHELL = [
   'assets/card_damage.png',
   'assets/card_range.png',
   'assets/card_rate.png',
-  'assets/enemy_boss_die.png',
-  'assets/enemy_boss_walk.png',
-  'assets/enemy_brute_die.png',
-  'assets/enemy_brute_walk.png',
-  'assets/enemy_grunt_die.png',
-  'assets/enemy_grunt_walk.png',
-  'assets/enemy_runner_die.png',
-  'assets/enemy_runner_walk.png',
+  'assets/enemy_demon_die.png',
+  'assets/enemy_demon_walk.png',
+  'assets/enemy_feline_die.png',
+  'assets/enemy_feline_walk.png',
+  'assets/enemy_goblin_die.png',
+  'assets/enemy_goblin_walk.png',
+  'assets/enemy_ogre_die.png',
+  'assets/enemy_ogre_walk.png',
+  'assets/enemy_raider_die.png',
+  'assets/enemy_raider_walk.png',
+  'assets/enemy_scorpion_die.png',
+  'assets/enemy_scorpion_walk.png',
+  'assets/enemy_sentinel_die.png',
+  'assets/enemy_sentinel_walk.png',
+  'assets/enemy_warden_die.png',
+  'assets/enemy_warden_walk.png',
+  'assets/enemy_wisp_die.png',
+  'assets/enemy_wisp_walk.png',
+  'assets/enemy_wizard_die.png',
+  'assets/enemy_wizard_walk.png',
   'assets/fx.png',
   'assets/hdr_difficulty.png',
   'assets/hdr_failed.png',

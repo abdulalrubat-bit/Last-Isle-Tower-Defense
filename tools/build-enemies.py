@@ -31,12 +31,31 @@ ap.add_argument('--contact', action='store_true',
                 help='render every type to a contact sheet and stop')
 a = ap.parse_args()
 
-# kind -> pack type number. Chosen so no two silhouettes can be confused:
-# goblin, scorpion, ogre, horned demon.
-PICK = {'grunt': 3, 'runner': 1, 'brute': 10, 'boss': 8}
+# kind -> pack type number. All ten the pack ships, so a level can field a
+# roster the player has not seen. Names describe the sprite, not the stats:
+# what a kind DOES lives in KINDS in game.js.
+PICK = {
+    'scorpion': 1,   # low, scuttling                 -> the fast one
+    'wizard':   2,   # hooded, staff                  -> caster
+    'goblin':   3,   # green, club                    -> the baseline
+    'sentinel': 4,   # white armoured, sword          -> armoured
+    'warden':   5,   # hooded dwarf, shield           -> armoured and slow
+    'raider':   6,   # orange-haired human, sword     -> soldier
+    'feline':   7,   # blue cat-demon, club           -> quick heavy
+    'demon':    8,   # black horned, scythe           -> boss
+    'wisp':     9,   # small pale spirit              -> swarm
+    'ogre':    10,   # big brown, sword               -> heavy
+}
 # Sheet frame height, about 1.6x the height the game draws the kind at.
-HEIGHT = {'grunt': 132, 'runner': 110, 'brute': 180, 'boss': 250}
-ANIMS = {'walk': (10, 192), 'die': (8, 128)}      # frames, palette size
+HEIGHT = {
+    'scorpion': 110, 'wizard': 150, 'goblin': 132, 'sentinel': 150,
+    'warden': 140, 'raider': 148, 'feline': 145, 'demon': 250,
+    'wisp': 104, 'ogre': 180,
+}
+# Eight walk frames and six death frames rather than ten and eight. At ten
+# types that difference is a couple of hundred kilobytes, and neither reads
+# differently in motion.
+ANIMS = {'walk': (8, 160), 'die': (6, 112)}       # frames, palette size
 
 def frames_for(no, anim):
     return sorted(glob.glob(os.path.join(a.source, str(no),

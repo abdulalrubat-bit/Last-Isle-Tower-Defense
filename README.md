@@ -20,7 +20,7 @@ props-data.js  GENERATED atlas manifest — tools/build-props.py writes it
 towers-data.js GENERATED atlas manifest — tools/build-towers.py writes it
 fx-data.js     GENERATED atlas manifest — tools/build-fx.py writes it
 game.js        the game, and the campaign
-assets/        46 files, 976KB — prop, tower and fx atlases, enemy sheets, UI
+assets/        58 files, 1.2MB — prop, tower and fx atlases, enemy sheets, UI
 sw.js          offline cache — generated, run tools/stamp-sw.py
 tools/         props, towers, fx, enemy sheets, sprites, balance sim, stamper
 ```
@@ -148,6 +148,41 @@ visible in the source art:
 Everything is still composited once per level into an offscreen canvas, so a
 map with ninety painted props costs one `drawImage` per frame.
 
+## How many different levels are actually possible
+
+Not a rhetorical question — `tools/sim.mjs --rosters N` measures it. It holds
+the map, the wave curve and the difficulty fixed, changes only which enemies
+fill the roles, and reports which of five build strategies clear each result.
+Two levels that the same builds beat are the same puzzle in different scenery.
+
+Forty rosters on one map produced **six distinct outcomes**, and thirty-one of
+the forty fell into just two of them. The current six-level campaign produces
+**two**.
+
+The reason is worth knowing before designing more levels:
+
+- **The `fodder` slot decides almost everything.** Every `goblin/scorpion/*`
+  roster gives an identical answer regardless of the heavy. Swap the fodder and
+  the answer changes; swap the heavy and it usually does not.
+- **Because fodder is the mass.** A wave is 8–20 fodder and 2–8 heavies, so
+  the fodder is what the towers spend their time shooting.
+
+So the ceiling on *mechanically* distinct levels is not the ten enemy types or
+the four biomes or the path geometry — all of which are effectively unlimited.
+It is the number of ways a wave's **mass** can differ, which right now is about
+five or six.
+
+Raising it means raising what a level can vary, not how many levels there are:
+
+- **Per-level wave curves.** The curve is global; a level that opens with
+  heavies, or never sends fodder at all, is a different problem before any
+  roster is chosen.
+- **More counter-mechanics.** `armour` (splash ignores it) and `slowImmune` are
+  the only two, and they are what produced the six outcomes above rather than
+  one. Flying, regenerating, or splitting-on-death would each add a dimension.
+- **Making heavies matter.** More of them per wave, or tankier, would put a
+  second slot in play instead of leaving the fodder to decide alone.
+
 ## Balance
 
 Simulation-checked, not guessed. `tools/sim.mjs` runs the real `game.js`
@@ -197,6 +232,7 @@ not a curve.
 npm i playwright && node tools/sim.mjs          # the summary table above
 node tools/sim.mjs --full                       # every run, itemised
 node tools/sim.mjs --level deepwood --runs 3    # one map, repeated
+node tools/sim.mjs --rosters 40                 # how distinct can levels be
 
 # Replace art (towers, enemies, UI — no backgrounds)
 python3 tools/build-assets.py --list ~/art        # what filenames are accepted
@@ -321,13 +357,14 @@ Deliberate omissions, not oversights:
   only towers, enemies and UI.
 - **The victory header reads "ACHIEVEMENT"** — the closest thing to a
   celebratory header the pack has. It wants a real one.
-- **Four enemy types, but ten exist.** The pack carries ten types with seven
-  animations each. Four are used — goblin, scorpion, ogre, horned demon —
-  chosen so no two silhouettes can be confused. Adding more is editing `PICK`
-  in `tools/build-enemies.py` and a row in `KINDS`.
 - **Only walk and die are used.** The pack also ships attack, hurt, idle, jump
-  and run per type. An attack animation when an enemy reaches the end, or a
-  hurt flash on a hit, are both art-complete and code-only.
+  and run per type. An attack animation when something reaches the end is
+  art-complete and code-only.
+- **arcane+ice beats every level.** It is in the winning set for all six, and
+  across a forty-roster sweep it never lost. That is a tower balance problem,
+  not a level one, and the sim will find it again the moment the numbers move.
+- **The `heavy` role barely matters.** See below — the mass of a wave decides
+  the answer, and heavies are a handful per wave.
 - **No music.** The toggle persists and the sound effects are synthesised.
 - **No achievements.** The pack has a window for them; nothing opens it,
   because there are no achievements yet to put in it.
