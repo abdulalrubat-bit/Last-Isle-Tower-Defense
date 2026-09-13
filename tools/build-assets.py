@@ -26,7 +26,7 @@ Together: 12.7MB of inline base64 down to ~1.1MB of cacheable files.
 With the original layered art, prefer exporting PNGs WITH alpha — then step 1
 is a no-op and nothing is inferred.
 """
-import argparse, hashlib, json, os, sys
+import argparse, hashlib, json, os, re, sys
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -143,6 +143,38 @@ if missing:
     for m in missing:
         print('  ' + m)
     print('\nRun with --list to see every filename this accepts.')
+# Enemies are the one thing the game can draw for itself, so game.js has to be
+# told when real art arrives. Rewriting the ENEMY_ART entries here keeps that
+# automatic without the game probing for files that are usually absent.
+def sync_enemy_art():
+    """Keep game.js honest about which kinds have art.
+
+    Enemy sheets are built by tools/build-enemies.py, not by this script, but
+    this is the script that runs after art changes — so it checks whether each
+    kind's walk sheet is actually present and flips ENEMY_ART to match. Without
+    it a kind whose sheet was deleted would keep being requested and the game
+    would fall back to a blank rather than to the drawn enemy.
+    """
+    game = os.path.normpath(os.path.join(HERE, '..', 'game.js'))
+    if not os.path.exists(game):
+        return
+    src = open(game).read()
+    changed = []
+    for kind in ('grunt', 'runner', 'brute', 'boss'):
+        walk = os.path.join(a.out, f'enemy_{kind}_walk.png')
+        if os.path.exists(walk):
+            continue                      # present: leave the declaration alone
+        pat = re.compile(r"(\n  %s:\s*)\{[^}]*\}," % kind)
+        new_src, n = pat.subn(lambda m: m.group(1) + 'null,', src, count=1)
+        if n and new_src != src:
+            src = new_src
+            changed.append(f'{kind} -> drawn (no sheet in assets/)')
+    if changed:
+        open(game, 'w').write(src)
+        print('\ngame.js ENEMY_ART updated: ' + ', '.join(changed))
+
+if not a.dry_run:
+    sync_enemy_art()
 if not a.dry_run and done:
     print('\nNow: python3 tools/stamp-sw.py   (or the update will not reach '
           'installed players)')

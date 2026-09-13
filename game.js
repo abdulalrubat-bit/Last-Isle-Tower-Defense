@@ -106,11 +106,13 @@ function upgradeCost(tower, track) {
   return Math.round(TOWERS[tower.type].cost * 0.55 * Math.pow(1.65, lvl));
 }
 
+// `size` is the drawn height in map pixels and is the main thing telling the
+// player what is coming, so the four are deliberately far apart.
 const KINDS = {
-  grunt:  { hp:1,    speed:1,    size:76,  reward:1,   tint:null },
-  runner: { hp:0.55, speed:1.75, size:64,  reward:1,   tint:'#7dff8a' },
-  brute:  { hp:3.2,  speed:0.68, size:104, reward:2.4, tint:'#ff6a4d' },
-  boss:   { hp:16,   speed:0.55, size:148, reward:9,   tint:'#c46bff' },
+  grunt:  { hp:1,    speed:1,    size:82,  reward:1 },
+  runner: { hp:0.55, speed:1.75, size:68,  reward:1 },
+  brute:  { hp:3.2,  speed:0.68, size:112, reward:2.4 },
+  boss:   { hp:16,   speed:0.55, size:158, reward:9 },
 };
 
 // Fifteen waves and then it is over. A tower defence you cannot finish is a
@@ -170,7 +172,7 @@ const S = {
   restLeft: 0,
   queue: [],             // enemy kinds still to spawn this wave
   spawnIn: 0,
-  towers: [], enemies: [], shots: [], fx: [],
+  towers: [], enemies: [], shots: [], fx: [], corpses: [],
   selectedType: 'fire',
   openTower: null,
   time: 0,
@@ -196,7 +198,24 @@ const ASSET_NAMES = [
   'tower_fire.png','tower_ice.png','tower_bolt.png','tower_arcane.png',
   'btn_music.png','btn_music_off.png','btn_sound.png','btn_sound_off.png',
 ];
-for (let i = 0; i < 10; i++) ASSET_NAMES.push(`enemy_run_${i}.png`);
+
+// Per-kind enemy art, built by tools/build-enemies.py from the pack's
+// animation folders. A kind set to null is drawn by enemies.js instead.
+// Real art, from the pack: ten enemy types, seven animations, twenty frames
+// each. Four are used, chosen so their silhouettes cannot be confused —
+// goblin, scorpion, ogre, horned demon.
+//
+// Each animation is ONE sprite sheet, frames laid out left to right. Eighty
+// loose frames would be eighty requests; this is eight. null for a kind falls
+// back to the version enemies.js draws, which is what shipped before the art
+// arrived and is still what runs if a sheet is missing.
+const ENEMY_ART = {
+  grunt:  { walk:'enemy_grunt_walk.png',  die:'enemy_grunt_die.png',  walkN:10, dieN:8 },
+  runner: { walk:'enemy_runner_walk.png', die:'enemy_runner_die.png', walkN:10, dieN:8 },
+  brute:  { walk:'enemy_brute_walk.png',  die:'enemy_brute_die.png',  walkN:10, dieN:8 },
+  boss:   { walk:'enemy_boss_walk.png',   die:'enemy_boss_die.png',   walkN:10, dieN:8 },
+};
+const DIE_MS = 700;
 
 const bootBar = document.getElementById('bootBar');
 const bootSay = document.getElementById('bootSay');
@@ -215,26 +234,38 @@ function loadAssets() {
   })));
 }
 
-// One enemy sprite set exists, so variety comes from scale and colour. The
-// tints are baked once at load rather than composited every frame.
-const RUN_FRAMES = {};
+// Animations are { img, fw, fh, count }, whether loaded or drawn.
+const RUN_FRAMES = {}, DIE_FRAMES = {};
+
+function loadSheet(file, count) {
+  return new Promise(resolve => {
+    const im = new Image();
+    im.onload = () => resolve(im.naturalWidth
+      ? { img: im, fw: im.naturalWidth / count, fh: im.naturalHeight, count }
+      : null);
+    im.onerror = () => resolve(null);      // absent is a state, not an error
+    im.src = 'assets/' + file;
+  });
+}
+
+function loadEnemyArt() {
+  return Promise.all(Object.keys(KINDS).map(kind => {
+    const set = ENEMY_ART[kind];
+    if (!set) return Promise.resolve();
+    return Promise.all([
+      loadSheet(set.walk, set.walkN),
+      set.die ? loadSheet(set.die, set.dieN) : Promise.resolve(null),
+    ]).then(([walk, die]) => {
+      if (walk) RUN_FRAMES[kind] = walk;
+      if (die) DIE_FRAMES[kind] = die;
+    });
+  }));
+}
+
 function bakeEnemyFrames() {
+  const drawn = bakeEnemySprites(KINDS, makeCanvas);
   for (const kind of Object.keys(KINDS)) {
-    const tint = KINDS[kind].tint;
-    RUN_FRAMES[kind] = [];
-    for (let i = 0; i < 10; i++) {
-      const src = IMG[`enemy_run_${i}.png`];
-      if (!tint || !src.naturalWidth) { RUN_FRAMES[kind].push(src); continue; }
-      const c = document.createElement('canvas');
-      c.width = src.naturalWidth; c.height = src.naturalHeight;
-      const g = c.getContext('2d');
-      g.drawImage(src, 0, 0);
-      g.globalCompositeOperation = 'source-atop';
-      g.globalAlpha = 0.55;
-      g.fillStyle = tint;
-      g.fillRect(0, 0, c.width, c.height);
-      RUN_FRAMES[kind].push(c);
-    }
+    if (!RUN_FRAMES[kind]) RUN_FRAMES[kind] = drawn[kind];
   }
 }
 
@@ -386,6 +417,9 @@ function damage(e, amount) {
     S.energy += e.reward;
     S.score += e.reward;
     S.dirty = true;
+    // The pack ships a death animation per enemy, so a kill is worth showing.
+    // Corpses are display-only: off the path, un-targetable, gone in DIE_MS.
+    S.corpses.push({ kind: e.kind, x: e.x, y: e.y, angle: e.angle, t: 0 });
   }
 }
 
@@ -496,6 +530,8 @@ function update(dt) {
   }
 
   for (const f of S.fx) f.ttl -= dt;
+  for (const c of S.corpses) c.t += dt;
+  S.corpses = S.corpses.filter(c => c.t < DIE_MS);
 
   S.shots = S.shots.filter(s => !s.dead);
   S.fx = S.fx.filter(f => f.ttl > 0);
@@ -531,6 +567,7 @@ function render() {
   if (S.baked) ctx.drawImage(S.baked, 0, 0, MAP_W, MAP_H);
 
   drawPads();
+  drawCorpses();
   drawTowers();
   drawEnemies();
   drawShots();
@@ -607,29 +644,61 @@ function drawTowers() {
   }
 }
 
+// `anim` is { img, fw, fh, count } from either a loaded sheet or enemies.js.
+// Feet sit a little below the centreline so a figure stands on the road
+// rather than hovering over it.
+function blitEnemy(anim, kind, x, y, angle, frame) {
+  const size = KINDS[kind].size;
+  const s = size / anim.fh;
+  const w = anim.fw * s, h = size;
+  const i = Math.min(anim.count - 1, Math.max(0, frame));
+  ctx.save();
+  ctx.translate(x, y + size * 0.20);
+  ctx.scale(Math.abs(angle) > Math.PI / 2 ? -s : s, s);
+  ctx.drawImage(anim.img, i * anim.fw, 0, anim.fw, anim.fh,
+                -anim.fw / 2, -anim.fh, anim.fw, anim.fh);
+  ctx.restore();
+  return { w, h };
+}
+
+function drawCorpses() {
+  for (const c of S.corpses) {
+    const k = c.t / DIE_MS;
+    const anim = DIE_FRAMES[c.kind];
+    ctx.save();
+    ctx.globalAlpha = k > 0.72 ? 1 - (k - 0.72) / 0.28 : 1;
+    if (anim) {
+      blitEnemy(anim, c.kind, c.x, c.y, c.angle, Math.floor(k * anim.count));
+    } else {
+      // No death sheet (a drawn enemy): sink and fade the last walk frame.
+      const walk = RUN_FRAMES[c.kind];
+      if (walk) {
+        ctx.globalAlpha *= 1 - k;
+        blitEnemy(walk, c.kind, c.x, c.y + k * 10, c.angle, 0);
+      }
+    }
+    ctx.restore();
+  }
+}
+
 function drawEnemies() {
   for (const e of S.enemies) {
     const k = KINDS[e.kind];
-    const frames = RUN_FRAMES[e.kind];
-    const frame = frames && frames[Math.floor((S.time + e.anim) / 85) % frames.length];
-    if (!frame) continue;
-    const fw = frame.naturalWidth || frame.width;
-    const fh = frame.naturalHeight || frame.height;
-    if (!fw) continue;
-    const s = k.size / fh;
-    const flip = Math.abs(e.angle) > Math.PI / 2;
+    const anim = RUN_FRAMES[e.kind];
+    if (!anim) continue;
+    const step = 92 / k.speed;
+    const frame = Math.floor((S.time + e.anim) / step) % anim.count;
 
     ctx.save();
-    ctx.translate(e.x, e.y);
     if (S.time < e.slowUntil) {
       ctx.shadowColor = '#8deaff';
       ctx.shadowBlur = 14;
     }
-    ctx.scale(flip ? -s : s, s);
-    ctx.drawImage(frame, -fw / 2, -fh / 2, fw, fh);
+    blitEnemy(anim, e.kind, e.x, e.y, e.angle, frame);
     ctx.restore();
 
-    const w = Math.max(34, k.size * 0.6), top = e.y - k.size / 2 - 9;
+    const w = Math.max(34, k.size * 0.52);
+    const top = e.y + k.size * 0.20 - k.size - 10;
     ctx.fillStyle = '#24150d';
     ctx.fillRect(e.x - w / 2, top, w, 6);
     ctx.fillStyle = e.kind === 'boss' ? '#c46bff' : '#e94332';
@@ -838,7 +907,7 @@ function newRun(levelIndex, diff) {
   S.phase = 'ready';
   S.restLeft = 0;
   S.queue = [];
-  S.towers = []; S.enemies = []; S.shots = []; S.fx = [];
+  S.towers = []; S.enemies = []; S.shots = []; S.fx = []; S.corpses = [];
   S.openTower = null;
   S.selectedType = 'fire';
   S.speed = 1;
@@ -1075,7 +1144,7 @@ function frame(now) {
 }
 
 resize();
-loadAssets().then(() => {
+Promise.all([loadAssets(), loadEnemyArt()]).then(() => {
   bakeEnemyFrames();
   bootSay.textContent = 'ready';
   el('btnMusic').querySelector('img').src =

@@ -13,10 +13,11 @@ nothing leaving the device. Saves stars, gems and the two audio toggles to
 ```
 index.html     shell, HUD, overlays, all CSS
 map.js         terrain: geometry, build pads, renderer
+enemies.js     drawn enemies — the fallback when a kind has no art
 game.js        the game, and the campaign
-assets/        44 files, 764KB — towers, enemies, UI. No backgrounds.
+assets/        43 files, 832KB — enemies, towers, UI. No backgrounds.
 sw.js          offline cache — generated, run tools/stamp-sw.py
-tools/         asset pipeline, balance sim, sw stamper
+tools/         asset pipeline, enemy sheets, balance sim, sw stamper
 ```
 
 Open `index.html` over http, or from `file://` — the service worker is skipped
@@ -126,6 +127,32 @@ board cleanly. Then run the sim and set `hp` and `padGap` from what it reports
 — those two are the difficulty dial, and guessing them is how levels 4–6 first
 came out as walls.
 
+## Enemies
+
+Four kinds, each a painted sprite sheet built from the pack:
+
+```sh
+python3 tools/build-enemies.py ~/art/Tower_5/PNG --contact  # see all ten types
+python3 tools/build-enemies.py ~/art/Tower_5/PNG            # build the sheets
+python3 tools/stamp-sw.py
+```
+
+One sheet per animation, frames left to right — eighty loose frames would be
+eighty requests. Three details in that tool are load-bearing:
+
+- **One bounding box per animation, not per frame.** Trimming each frame to its
+  own content makes the sprite jitter as it plays, because the trim moves
+  underneath it.
+- **Palette quantisation.** Painted sprites drawn at 110–250px do not need
+  full-depth RGBA: 2.28MB became 257KB with no visible difference.
+- **Ten frames, not twenty.** Twenty at 92ms is a two-second walk cycle; ten
+  reads identically and halves the file.
+
+`enemies.js` draws the four kinds from scratch — jointed figures with walk
+cycles, an outline and a light direction, matching the terrain. Nothing uses it
+now that the art is in, and that is the point: it is the fallback. Set a kind
+to `null` in `ENEMY_ART` and it draws rather than disappears.
+
 ## Dropping in the real art
 
 Every sprite the game ships was *recovered* from the pack's JPEGs by keying out
@@ -208,9 +235,13 @@ Deliberate omissions, not oversights:
   only towers, enemies and UI.
 - **The victory header reads "ACHIEVEMENT"** — the closest thing to a
   celebratory header the pack has. It wants a real one.
-- **One enemy sprite set.** Grunt, runner, brute and boss are the same ten run
-  frames at different scales and tints, baked once at load. Real variety needs
-  art — and it is now the only thing in the game that does.
+- **Four enemy types, but ten exist.** The pack carries ten types with seven
+  animations each. Four are used — goblin, scorpion, ogre, horned demon —
+  chosen so no two silhouettes can be confused. Adding more is editing `PICK`
+  in `tools/build-enemies.py` and a row in `KINDS`.
+- **Only walk and die are used.** The pack also ships attack, hurt, idle, jump
+  and run per type. An attack animation when an enemy reaches the end, or a
+  hurt flash on a hit, are both art-complete and code-only.
 - **No music.** The toggle persists and the sound effects are synthesised.
 - **No achievements.** The pack has a window for them; nothing opens it,
   because there are no achievements yet to put in it.

@@ -7,7 +7,7 @@
  * by hand it is a key someone forgets to bump, and a forgotten bump strands a
  * player on an old build with no way to know it.
  */
-const VERSION = 'ec874bf14f1e';
+const VERSION = '4afb67753580';
 const CACHE = 'islanddefence-' + VERSION;
 
 const SHELL = [
@@ -40,16 +40,14 @@ const SHELL = [
   'assets/card_damage.png',
   'assets/card_range.png',
   'assets/card_rate.png',
-  'assets/enemy_run_0.png',
-  'assets/enemy_run_1.png',
-  'assets/enemy_run_2.png',
-  'assets/enemy_run_3.png',
-  'assets/enemy_run_4.png',
-  'assets/enemy_run_5.png',
-  'assets/enemy_run_6.png',
-  'assets/enemy_run_7.png',
-  'assets/enemy_run_8.png',
-  'assets/enemy_run_9.png',
+  'assets/enemy_boss_die.png',
+  'assets/enemy_boss_walk.png',
+  'assets/enemy_brute_die.png',
+  'assets/enemy_brute_walk.png',
+  'assets/enemy_grunt_die.png',
+  'assets/enemy_grunt_walk.png',
+  'assets/enemy_runner_die.png',
+  'assets/enemy_runner_walk.png',
   'assets/hdr_difficulty.png',
   'assets/hdr_failed.png',
   'assets/hdr_upgrade.png',

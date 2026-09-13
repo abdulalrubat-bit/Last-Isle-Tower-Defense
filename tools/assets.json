@@ -1,12 +1,13 @@
 {
   "_comment": [
     "Source name -> output name, longest-edge cap, mode.",
-    "mode 'opaque' = full-bleed background, no alpha. Empty: since the terrain",
-    "is drawn in code (map.js) the game ships no background images at all.",
+    "mode 'opaque' = full-bleed background, no alpha. Empty: the terrain is drawn",
+    "in code (map.js) so the game ships no background images at all.",
     "mode 'sprite' = has or needs alpha. Art already carrying an alpha channel",
     "passes through untouched; art delivered flat on black is keyed.",
-    "Caps are ~2x the largest size the asset is ever drawn at. The original",
-    "pack shipped a 1536x1527 PNG for a button drawn at 330x170."
+    "Caps are ~2x the largest size the asset is ever drawn at.",
+    "Enemies are NOT here: they are multi-frame animations packed into sprite",
+    "sheets by tools/build-enemies.py, which is a different job to this one."
   ],
   "opaque": {},
   "sprite": {
@@ -149,46 +150,6 @@
     "upgrade_done.png": [
       "btn_done.png",
       288
-    ],
-    "enemy_run_0.png": [
-      "enemy_run_0.png",
-      160
-    ],
-    "enemy_run_1.png": [
-      "enemy_run_1.png",
-      160
-    ],
-    "enemy_run_2.png": [
-      "enemy_run_2.png",
-      160
-    ],
-    "enemy_run_3.png": [
-      "enemy_run_3.png",
-      160
-    ],
-    "enemy_run_4.png": [
-      "enemy_run_4.png",
-      160
-    ],
-    "enemy_run_5.png": [
-      "enemy_run_5.png",
-      160
-    ],
-    "enemy_run_6.png": [
-      "enemy_run_6.png",
-      160
-    ],
-    "enemy_run_7.png": [
-      "enemy_run_7.png",
-      160
-    ],
-    "enemy_run_8.png": [
-      "enemy_run_8.png",
-      160
-    ],
-    "enemy_run_9.png": [
-      "enemy_run_9.png",
-      160
     ]
   }
 }
