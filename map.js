@@ -20,6 +20,47 @@
 
 const LIGHT = { x: -0.55, y: -0.8 };     // unit-ish; highlights offset this way
 
+/* The pack's painted map layers, packed into one atlas by tools/build-props.py.
+   `setPropAtlas` is called once the image has loaded; until then, and if the
+   atlas is missing entirely, every biome falls back to the drawn version.
+   Nothing here is required for the game to run. */
+let ATLAS_IMG = null;
+const ATLAS_TILES = {};                  // biome -> { ground, road } patterns
+
+/* Multiply a hex colour. The pack's road surface and ground are close in
+   value in some kits — the meadow road is a pale yellow-green on pale green —
+   so the road reads only if its border is genuinely dark. Deriving that from
+   the sampled edge keeps each biome's own hue. */
+function shade(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  const c = v => Math.max(0, Math.min(255, Math.round(v * f)));
+  return `rgb(${c((n >> 16) & 255)},${c((n >> 8) & 255)},${c(n & 255)})`;
+}
+
+function ATLAS_FOR(biome) {
+  return (ATLAS_IMG && typeof PROP_ATLAS !== 'undefined' && PROP_ATLAS[biome])
+    ? PROP_ATLAS[biome] : null;
+}
+
+function setPropAtlas(img, canvasFactory) {
+  ATLAS_IMG = img;
+  if (typeof PROP_ATLAS === 'undefined') return;
+  // Ground and road are repeating fills, so each needs its own image rather
+  // than a rectangle inside a bigger one — createPattern tiles the whole
+  // source. Cut them out once here.
+  for (const biome of Object.keys(PROP_ATLAS)) {
+    const m = PROP_ATLAS[biome], t = {};
+    for (const key of ['ground', 'roadTex']) {
+      const r = m[key];
+      if (!r) continue;
+      const cv = canvasFactory(r[2], r[3]);
+      cv.getContext('2d').drawImage(img, r[0], r[1], r[2], r[3], 0, 0, r[2], r[3]);
+      t[key] = cv;
+    }
+    ATLAS_TILES[biome] = t;
+  }
+}
+
 function rng(seed) {                      // mulberry32
   return function () {
     seed |= 0; seed = seed + 0x6D2B79F5 | 0;
@@ -29,45 +70,57 @@ function rng(seed) {                      // mulberry32
   };
 }
 
+// Drawn fallback only. When assets/props.png is present the ground, the road
+// surface and every prop come from the pack's painted art and these colours
+// are unused except as the tint under it. Names match the pack's four kits.
 const PALETTES = {
-  island: {
-    ink:'#2b4520',
-    ground:['#62a63f','#6fb349','#569636'],
-    groundDeep:'#47832e',
-    road:'#ebd39a', roadLo:'#d8bd83', roadEdge:'#a8854f', roadInk:'#7d6136',
-    water:'#3ba0dd', waterDeep:'#2a7fb8', waterRim:'#8ad6f5', shore:'#e0c894',
-    leaf:['#3e8f30','#4fa93d','#68c352'], leafInk:'#245018',
-    trunk:'#7d5430', trunkInk:'#4a2f19',
-    rock:'#9aa4ab', rockHi:'#c6ced4', rockInk:'#5d666c',
-    bloom:['#f5e356','#f28fb0','#ffffff'],
-    shadow:'rgba(24,54,18,.20)',
-    props:['palm','palm','tree','bush','rock','stump','reeds','flowers'],
-  },
-  forest: {
+  meadow: {
     ink:'#22371c',
-    ground:['#4e8437','#5a9240','#43752f'],
-    groundDeep:'#376127',
-    road:'#b9925f', roadLo:'#a37f4f', roadEdge:'#7d6141', roadInk:'#54402a',
+    ground:['#c3d38a','#cfdd99','#b4c67a'], groundDeep:'#9aae63',
+    road:'#dfeaa8', roadLo:'#cfdb95', roadEdge:'#a6ae77', roadInk:'#7d8656',
     water:'#3785ad', waterDeep:'#2a6a8c', waterRim:'#7bc0dd', shore:'#a98f60',
     leaf:['#2f6b2b','#3d8434','#4f9d42'], leafInk:'#1a3d16',
     trunk:'#68472a', trunkInk:'#3c2717',
     rock:'#8d9499', rockHi:'#b8c0c5', rockInk:'#535a5f',
     bloom:['#e8e15c','#d97fae','#f0f0f0'],
-    shadow:'rgba(18,40,14,.24)',
+    shadow:'rgba(40,56,26,.22)',
     props:['tree','tree','pine','bush','rock','log','stump','flowers'],
   },
-  snow: {
-    ink:'#5a6b7a',
-    ground:['#e3ebf2','#eef4f9','#d3dee8'],
-    groundDeep:'#c2d0dc',
-    road:'#c3cedb', roadLo:'#b0bdcb', roadEdge:'#93a2b1', roadInk:'#6d7c8b',
+  desert: {
+    ink:'#6b4a24',
+    ground:['#dfb45f','#e8c274','#cfa451'], groundDeep:'#b08c40',
+    road:'#ba9856', roadLo:'#ad8b4c', roadEdge:'#aa814b', roadInk:'#7d5c33',
+    water:'#3ba0dd', waterDeep:'#2a7fb8', waterRim:'#8ad6f5', shore:'#e0c894',
+    leaf:['#8a7a3a','#9c8c46','#b0a055'], leafInk:'#5c4f22',
+    trunk:'#8a5f33', trunkInk:'#513619',
+    rock:'#b08c5e', rockHi:'#d3b285', rockInk:'#6d5232',
+    bloom:['#f5e356','#e8a13f','#ffffff'],
+    shadow:'rgba(110,80,30,.22)',
+    props:['stump','bush','rock','rock','flowers','log'],
+  },
+  frost: {
+    ink:'#3d5a68',
+    ground:['#5b7b8c','#6a8b9c','#4d6b7b'], groundDeep:'#3f5b69',
+    road:'#cef3ec', roadLo:'#b6ddd7', roadEdge:'#75a6b0', roadInk:'#4f7b86',
     water:'#63b4e0', waterDeep:'#4795c4', waterRim:'#b3e4fa', shore:'#cfdae5',
     leaf:['#2c6b50','#387f5f','#479973'], leafInk:'#1b4432',
     trunk:'#5d4630', trunkInk:'#33251a',
     rock:'#9aa4ad', rockHi:'#ccd5dc', rockInk:'#606a74',
     bloom:['#ffffff','#cfe6f5','#e8f4ff'],
-    shadow:'rgba(90,110,130,.18)',
-    props:['pine','pine','rock','stump','bush','log'],
+    shadow:'rgba(20,40,55,.26)',
+    props:['pine','pine','rock','stump','bush'],
+  },
+  ash: {
+    ink:'#2a2c28',
+    ground:['#464b43','#51574d','#3c413a'], groundDeep:'#32362f',
+    road:'#797d72', roadLo:'#6e7268', roadEdge:'#675f58', roadInk:'#443f3a',
+    water:'#3785ad', waterDeep:'#2a6a8c', waterRim:'#7bc0dd', shore:'#6b675c',
+    leaf:['#3a4438','#455041','#525e4c'], leafInk:'#23291F',
+    trunk:'#4a3c2e', trunkInk:'#2a221a',
+    rock:'#6d7168', rockHi:'#93988c', rockInk:'#3f433c',
+    bloom:['#c8643c','#e08a4a','#9aa08e'],
+    shadow:'rgba(10,12,10,.32)',
+    props:['rock','rock','stump','bush','log'],
   },
 };
 
@@ -158,15 +211,20 @@ function buildLevel(spec, W, H) {
     if (!clearOfPads(x, y, 88)) continue;
     if (!clearOfWater(x, y, 26)) continue;
     if (props.some(p => Math.hypot(p.x-x, p.y-y) < 46)) continue;
-    props.push({ x, y, s: 0.78 + rand()*0.46, r: rand(),
-                 kind: pal.props[(rand()*pal.props.length) | 0] });
+    const art = ATLAS_FOR(spec.palette);
+    props.push(art
+      ? { x, y, s: 0.82 + rand()*0.38, r: rand(),
+          art: art.props[(rand()*art.props.length) | 0] }
+      : { x, y, s: 0.78 + rand()*0.46, r: rand(),
+          kind: pal.props[(rand()*pal.props.length) | 0] });
   }
   props.sort((a, b) => a.y - b.y);
 
   // Ground litter: dense, tiny, no shadows. Cheap, and it stops the ground
   // reading as a flat fill.
   const decor = [];
-  for (let i = 0; i < (spec.decor || 520); i++) {
+  const litter = ATLAS_FOR(spec.palette) ? 0 : (spec.decor || 520);
+  for (let i = 0; i < litter; i++) {
     const x = rand()*W, y = rand()*H;
     if (!clearOfRoad(x, y, ROAD_W*0.5 + 8)) continue;
     if (!clearOfWater(x, y, 6)) continue;
@@ -222,22 +280,50 @@ function renderLevel(level, canvasFactory) {
   const rand = rng(level.spec.seed ^ 0x9e37);
 
   /* ground */
-  ctx.fillStyle = pal.ground[0];
-  ctx.fillRect(0, 0, W, H);
-  for (let i = 0; i < 90; i++) {
-    ctx.globalAlpha = 0.18 + rand()*0.22;
-    ctx.fillStyle = pal.ground[rand() < 0.5 ? 1 : 2];
-    ctx.beginPath();
-    ctx.ellipse(rand()*W, rand()*H, 50 + rand()*150, 34 + rand()*90,
-                rand()*Math.PI, 0, Math.PI*2);
-    ctx.fill();
+  const art = ATLAS_FOR(level.spec.palette);
+  const tiles = ATLAS_TILES[level.spec.palette];
+  if (art && tiles && tiles.ground) {
+    ctx.fillStyle = ctx.createPattern(tiles.ground, 'repeat');
+    ctx.fillRect(0, 0, W, H);
+    // Down a shade: several kits paint road and ground at almost the same
+    // value, and the road has to be the lighter of the two to read as a lane.
+    // Scaled by the ground's own brightness — a flat amount crushed the ash
+    // kit, which is nearly black before anything is laid over it, and that is
+    // the map whose boss is a black horned demon.
+    ctx.fillStyle = `rgba(24,30,16,${(0.04 + 0.2 * (art.lum ?? 0.6)).toFixed(3)})`;
+    ctx.fillRect(0, 0, W, H);
+    // Broad soft patches over the tile, so a 256px repeat does not read as a
+    // grid across a 1536px board.
+    for (let i = 0; i < 40; i++) {
+      ctx.globalAlpha = 0.05 + rand()*0.07;
+      ctx.fillStyle = rand() < 0.5 ? '#ffffff' : '#000000';
+      ctx.beginPath();
+      ctx.ellipse(rand()*W, rand()*H, 120 + rand()*280, 80 + rand()*180,
+                  rand()*Math.PI, 0, Math.PI*2);
+      ctx.fill();
+    }
+  } else {
+    ctx.fillStyle = pal.ground[0];
+    ctx.fillRect(0, 0, W, H);
+    for (let i = 0; i < 90; i++) {
+      ctx.globalAlpha = 0.18 + rand()*0.22;
+      ctx.fillStyle = pal.ground[rand() < 0.5 ? 1 : 2];
+      ctx.beginPath();
+      ctx.ellipse(rand()*W, rand()*H, 50 + rand()*150, 34 + rand()*90,
+                  rand()*Math.PI, 0, Math.PI*2);
+      ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
 
   for (const d of level.decor) drawDecor(ctx, pal, d);
   for (const w of level.water) drawWater(ctx, pal, w, rand);
-  drawRoad(ctx, pal, level.path, rand);
-  for (const p of level.props) drawProp(ctx, pal, p);
+  ROAD_ART = art;
+  drawRoad(ctx, pal, level.path, rand, tiles, canvasFactory, W, H);
+  for (const p of level.props) {
+    if (p.art) drawAtlasProp(ctx, pal, p);
+    else drawProp(ctx, pal, p);
+  }
 
   /* vignette: sits the board in its frame and stops the edges reading flat */
   const g = ctx.createRadialGradient(W/2, H/2, Math.min(W,H)*0.36,
@@ -248,7 +334,23 @@ function renderLevel(level, canvasFactory) {
   return cv;
 }
 
-function drawRoad(ctx, pal, path, rand) {
+/* Painted props sit on their base, like the enemies do, and get the same
+   soft contact shadow so they are not pasted flat onto the ground. */
+function drawAtlasProp(ctx, pal, p) {
+  const [sx, sy, sw, sh] = p.art.r;
+  const w = sw * p.s, h = sh * p.s;
+  ctx.save();
+  ctx.fillStyle = pal.shadow;
+  ctx.beginPath();
+  ctx.ellipse(p.x + 3, p.y + 2, Math.max(9, w * 0.34), Math.max(4, w * 0.13),
+              0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.drawImage(ATLAS_IMG, sx, sy, sw, sh, p.x - w / 2, p.y - h, w, h);
+  ctx.restore();
+}
+
+let ROAD_ART = null;            // set per render; the biome's sampled colours
+function drawRoad(ctx, pal, path, rand, tiles, canvasFactory, W, H) {
   const trace = () => {
     ctx.beginPath();
     ctx.moveTo(path[0][0], path[0][1]);
@@ -256,9 +358,43 @@ function drawRoad(ctx, pal, path, rand) {
   };
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
 
-  trace(); ctx.strokeStyle = pal.roadInk;  ctx.lineWidth = ROAD_W + 16; ctx.stroke();
-  trace(); ctx.strokeStyle = pal.roadEdge; ctx.lineWidth = ROAD_W + 9;  ctx.stroke();
-  trace(); ctx.strokeStyle = pal.roadLo;   ctx.lineWidth = ROAD_W;      ctx.stroke();
+  const art = tiles && tiles.roadTex ? ROAD_ART : null;
+  const ink  = art ? shade(art.roadEdge, 0.42) : pal.roadInk;
+  const edge = art ? art.roadEdge : pal.roadEdge;
+  trace(); ctx.strokeStyle = ink;  ctx.lineWidth = ROAD_W + 22; ctx.stroke();
+  trace(); ctx.strokeStyle = edge; ctx.lineWidth = ROAD_W + 11; ctx.stroke();
+  trace(); ctx.strokeStyle = pal.roadLo; ctx.lineWidth = ROAD_W; ctx.stroke();
+
+  // Painted surface. A stroke cannot be used as a clip region, so the road is
+  // stroked solid into a scratch canvas and the texture composited INTO it
+  // with 'source-in'. That is what lets the pack's road art follow a spline
+  // it was never drawn for — its own pieces are fixed corners and junctions.
+  if (tiles && tiles.roadTex && canvasFactory) {
+    const cv = canvasFactory(W, H);
+    const c2 = cv.getContext('2d');
+    c2.lineCap = c2.lineJoin = 'round';
+    c2.beginPath();
+    c2.moveTo(path[0][0], path[0][1]);
+    for (let i = 1; i < path.length; i++) c2.lineTo(path[i][0], path[i][1]);
+    c2.strokeStyle = '#000';
+    c2.lineWidth = ROAD_W;
+    c2.stroke();
+    c2.globalCompositeOperation = 'source-in';
+    c2.fillStyle = c2.createPattern(tiles.roadTex, 'repeat');
+    c2.fillRect(0, 0, W, H);
+    ctx.drawImage(cv, 0, 0);
+
+    // A soft inner shadow along the verge, so the lane reads as worn into the
+    // ground rather than laid on top of it.
+    ctx.save();
+    trace();
+    ctx.globalAlpha = 0.22;
+    ctx.strokeStyle = ink;
+    ctx.lineWidth = 9;
+    ctx.stroke();
+    ctx.restore();
+    return;                       // the texture replaces the drawn wear below
+  }
   // Lit centre, narrower and nudged toward the light: the road reads as worn
   // down the middle instead of as a flat ribbon.
   ctx.save();

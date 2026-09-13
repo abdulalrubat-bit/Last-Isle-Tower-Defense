@@ -27,37 +27,37 @@ const MAP_W = 1536, MAP_H = 864;
 // difficulty a lot — a longer road means more time in range, so it plays
 // easier — so these are set from what tools/sim.mjs measures, not by eye.
 const LEVELS = [
-  { id:'landing', name:'FIRST LANDING', palette:'island', hp:1.00, seed:20260912,
+  { id:'landing', name:'FIRST LANDING', palette:'meadow', hp:1.00, seed:20260912,
     props:300, decor:620,
     control:[[-40,700],[240,690],[430,640],[520,500],[660,430],[860,470],
              [980,380],[1010,240],[1200,190],[1400,230],[1580,300]],
     water:[{x:1210,y:585,rx:185,ry:80,rot:-.08}] },
 
-  { id:'palmrun', name:'PALM RUN', palette:'island', hp:1.06, seed:5514,
+  { id:'palmrun', name:'THE LONG MEADOW', palette:'meadow', hp:1.06, seed:5514,
     props:320, decor:640, padGap:170,
     control:[[-40,240],[210,220],[390,330],[430,540],[620,660],[830,600],
              [890,420],[1060,300],[1270,330],[1400,520],[1580,620]],
     water:[{x:250,y:660,rx:150,ry:66,rot:.12}] },
 
-  { id:'deepwood', name:'DEEPWOOD', palette:'forest', hp:1.07, seed:7712,
+  { id:'deepwood', name:'DUST ROAD', palette:'desert', hp:1.07, seed:7712,
     props:340, decor:640, padGap:180,
     control:[[-40,180],[220,200],[400,320],[420,520],[600,640],[820,600],
              [900,430],[1080,330],[1290,380],[1420,560],[1580,660]],
     water:[{x:290,y:700,rx:145,ry:66,rot:.1},{x:1190,y:150,rx:118,ry:56,rot:-.2}] },
 
-  { id:'millpond', name:'MILLPOND', palette:'forest', hp:1.05, seed:41009,
+  { id:'millpond', name:'MILLPOND', palette:'frost', hp:1.05, seed:41009,
     props:300, decor:600, padGap:186,
     control:[[-40,620],[220,640],[420,560],[500,380],[700,300],[900,380],
              [1000,560],[1180,640],[1360,560],[1460,380],[1580,300]],
     water:[{x:700,y:640,rx:175,ry:76,rot:0},{x:1180,y:200,rx:130,ry:60,rot:.15}] },
 
-  { id:'frostgate', name:'FROSTGATE', palette:'snow', hp:1.07, seed:33144,
+  { id:'frostgate', name:'FROSTGATE', palette:'frost', hp:1.07, seed:33144,
     props:260, decor:520, padGap:190,
     control:[[-40,430],[200,440],[340,300],[540,250],[700,360],[760,570],
              [950,660],[1150,590],[1240,400],[1420,330],[1580,380]],
     water:[{x:520,y:700,rx:160,ry:70,rot:.05}] },
 
-  { id:'longroad', name:'THE LONG ROAD', palette:'snow', hp:1.11, seed:88231,
+  { id:'longroad', name:'ASHFALL', palette:'ash', hp:1.11, seed:88231,
     props:280, decor:560, padGap:216,
     control:[[-40,160],[180,180],[300,360],[240,560],[380,700],[620,700],
              [740,540],[700,340],[860,220],[1080,240],[1180,420],[1120,620],
@@ -245,6 +245,21 @@ function loadSheet(file, count) {
       : null);
     im.onerror = () => resolve(null);      // absent is a state, not an error
     im.src = 'assets/' + file;
+  });
+}
+
+// The painted map layers. Everything that draws terrain waits on this, so it
+// resolves rather than rejects when absent: no atlas means the drawn terrain,
+// which is a complete fallback rather than a broken board.
+function loadPropAtlas() {
+  return new Promise(resolve => {
+    const im = new Image();
+    im.onload = () => {
+      if (im.naturalWidth) setPropAtlas(im, makeCanvas);
+      resolve();
+    };
+    im.onerror = () => resolve();
+    im.src = 'assets/props.png';
   });
 }
 
@@ -1144,7 +1159,7 @@ function frame(now) {
 }
 
 resize();
-Promise.all([loadAssets(), loadEnemyArt()]).then(() => {
+Promise.all([loadAssets(), loadEnemyArt(), loadPropAtlas()]).then(() => {
   bakeEnemyFrames();
   bootSay.textContent = 'ready';
   el('btnMusic').querySelector('img').src =

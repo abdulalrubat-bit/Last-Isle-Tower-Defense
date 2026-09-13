@@ -3,8 +3,10 @@
 A tower defence with a six-map campaign. Fifteen waves a map, four towers,
 three difficulties, stars per map, maps unlocking in order.
 
-**The terrain is drawn in code.** There is not one background image in the
-game. A map is about ten lines of data.
+**The terrain is composed, not painted.** There is no background image: the
+ground is a tiling texture, the road is a texture pattern-filled along a
+spline, and the scenery is painted props scattered by the code that knows
+where the road is. A map is about ten lines of data.
 
 Hand-written, no engine. Offline once loaded, no accounts, no network calls,
 nothing leaving the device. Saves stars, gems and the two audio toggles to
@@ -14,10 +16,11 @@ nothing leaving the device. Saves stars, gems and the two audio toggles to
 index.html     shell, HUD, overlays, all CSS
 map.js         terrain: geometry, build pads, renderer
 enemies.js     drawn enemies — the fallback when a kind has no art
+props-data.js  GENERATED atlas manifest — tools/build-props.py writes it
 game.js        the game, and the campaign
-assets/        43 files, 832KB — enemies, towers, UI. No backgrounds.
+assets/        44 files, 956KB — one prop atlas, enemy sheets, towers, UI
 sw.js          offline cache — generated, run tools/stamp-sw.py
-tools/         asset pipeline, enemy sheets, balance sim, sw stamper
+tools/         props, enemy sheets, sprite pipeline, balance sim, sw stamper
 ```
 
 Open `index.html` over http, or from `file://` — the service worker is skipped
@@ -48,7 +51,8 @@ inversion is a win:
   sides, auto-rejecting anything near water, the map edge or another pad.
 - **Pad distance is one constant.** It is also the single most important number
   in the balance — see below — and it can no longer drift per map.
-- **Biome is a palette swap.** Island, forest and snow are the same renderer.
+- **Biome is a kit swap.** Meadow, desert, frost and ash are the same renderer
+  with a different ground tile, road texture and prop set.
 - **Level select thumbnails are free**: the same renderer at card size.
 - **The menu backdrop is a level** — the furthest one unlocked.
 - **A new map costs about ten lines and zero bytes.**
@@ -61,6 +65,44 @@ about 700ms.
 Two cheap things carry the cartoon look and both are load-bearing: every solid
 shape gets a dark outline, and every highlight falls to the top-left. Without
 them it reads as a diagram rather than a game board.
+
+## Where the terrain comes from
+
+The pack ships each map as **separate layers** rather than as a flat picture: a
+tileable ground texture, road pieces, and painted trees, bushes, stones and
+decorations — four complete biome kits. `tools/build-props.py` packs all of it
+into one atlas.
+
+```sh
+python3 tools/build-props.py ~/art/Tower_tileset/PNG
+python3 tools/stamp-sw.py
+```
+
+The road is the interesting part. The pack's road pieces are **fixed corners
+and junctions**, so they cannot follow an arbitrary spline and none of them are
+used as tiles. What is used is the texture *inside* them: a square is cut from
+the middle of the straight piece, and the road is stroked into a scratch canvas
+and that texture composited into it with `source-in`. A stroke cannot be a clip
+region, so this is the way to pattern-fill one — and it is what lets painted
+road art follow a road it was never drawn for.
+
+Three things that needed correcting once it was on screen, none of them
+visible in the source art:
+
+- **The road vanished.** Several kits paint road and ground at nearly the same
+  value — the meadow road is pale yellow-green on pale green — and rely on a
+  dark border for the contrast. Drawn faintly, the lane disappeared into the
+  field. The border is now derived from the sampled edge at 0.42 brightness.
+- **The ground needed to come down a shade** so the road could be the lighter
+  of the two. A flat amount crushed the ash kit, which is nearly black to start
+  with and is the map whose boss is a black horned demon, so the amount is
+  scaled by the ground tile's own measured luminance.
+- **Frost swamped itself.** It ships no trees, so its tall crystal growths were
+  the tallest thing on the board at the height decor was given. Decor now caps
+  below tree height.
+
+Everything is still composited once per level into an offscreen canvas, so a
+map with ninety painted props costs one `drawImage` per frame.
 
 ## Balance
 
@@ -248,3 +290,9 @@ Deliberate omissions, not oversights:
 - **The renderer has no elevation.** Cliffs, bridges and roads that cross
   would all add map variety, and all need the renderer to understand height,
   which it currently does not.
+- **Water is still drawn, not painted.** The pack ships a `lake.png` per kit;
+  the game draws an ellipse. It shows most in frost and ash.
+- **The towers are the last recovered art.** They are still keyed out of the
+  original JPEGs, which is why they read as rocks and igloos. The pack has
+  proper tower bases, projectiles and archer units, and separately a set of
+  impact and explosion animations that nothing uses yet.
