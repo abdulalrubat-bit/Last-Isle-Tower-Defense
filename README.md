@@ -17,10 +17,11 @@ index.html     shell, HUD, overlays, all CSS
 map.js         terrain: geometry, build pads, renderer
 enemies.js     drawn enemies — the fallback when a kind has no art
 props-data.js  GENERATED atlas manifest — tools/build-props.py writes it
+towers-data.js GENERATED atlas manifest — tools/build-towers.py writes it
 game.js        the game, and the campaign
-assets/        44 files, 956KB — one prop atlas, enemy sheets, towers, UI
+assets/        45 files, 960KB — prop and tower atlases, enemy sheets, UI
 sw.js          offline cache — generated, run tools/stamp-sw.py
-tools/         props, enemy sheets, sprite pipeline, balance sim, sw stamper
+tools/         props, towers, enemy sheets, sprites, balance sim, sw stamper
 ```
 
 Open `index.html` over http, or from `file://` — the service worker is skipped
@@ -65,6 +66,34 @@ about 700ms.
 Two cheap things carry the cartoon look and both are load-bearing: every solid
 shape gets a dark outline, and every highlight falls to the top-left. Without
 them it reads as a diagram rather than a game board.
+
+## Towers
+
+Four types, three tiers each, and a projectile per element — all from the pack:
+
+```sh
+python3 tools/build-towers.py ~/art/Tower_Assets_2/PNG
+python3 tools/stamp-sw.py
+```
+
+The pack ships each tower as **three tiers**, which the game had not been using
+— it drew one flat sprite per type, and not even consistently: the file called
+`tower_arcane` was tier *three* of the dark tower while `tower_bolt` was tier
+*one* of the temple. The tool maps them by exact pixel size against what the
+game already shipped rather than by eye.
+
+A tower's art now steps up as it is upgraded: levels 1–3 tier one, 4–6 tier
+two, 7–10 tier three. Uneven on purpose — tier two arrives early enough that
+the first real investment in a tower is visible on the board and not only in
+the upgrade panel.
+
+Projectiles are the pack's own per element, rotated to their heading. The
+sprites are drawn pointing up, so the heading gets a quarter turn added; a bolt
+travelling sideways flew flat without it.
+
+Tier one is also written out as a standalone `tower_<type>.png`. That is what
+the HUD slot shows, and what the board falls back to if the atlas fails — a
+tower that does not draw at all is worse than a tower without tiers.
 
 ## Where the terrain comes from
 
@@ -292,7 +321,9 @@ Deliberate omissions, not oversights:
   which it currently does not.
 - **Water is still drawn, not painted.** The pack ships a `lake.png` per kit;
   the game draws an ellipse. It shows most in frost and ash.
-- **The towers are the last recovered art.** They are still keyed out of the
-  original JPEGs, which is why they read as rocks and igloos. The pack has
-  proper tower bases, projectiles and archer units, and separately a set of
-  impact and explosion animations that nothing uses yet.
+- **Nothing uses the impact animations.** The pack ships fire bursts, rock
+  shrapnel and smoke rings; a hit currently draws a circle and the arcane
+  splash draws an expanding ring.
+- **The pack has a second tower family** — catapults and ballistae, with
+  archer units that have their own bow animations. Nothing uses those either,
+  and they would suit a tower that fires a visible unit rather than a bolt.

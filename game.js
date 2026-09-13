@@ -86,7 +86,7 @@ const TOWERS = {
             dmg:46, rate:1100, range:225, shot:900, colour:'#ffe34d',
             chain:1, chainRange:150, chainFalloff:0.55 },
   arcane: { name:'ARCANE TOWER',    art:'tower_arcane.png', cost:155,
-            dmg:21, rate:620,  range:200, shot:470, colour:'#b86cff',
+            dmg:21, rate:620,  range:200, shot:470, colour:'#f0563c',
             splash:88 },
 };
 const TOWER_ORDER = ['fire', 'ice', 'bolt', 'arcane'];
@@ -251,6 +251,26 @@ function loadSheet(file, count) {
 // The painted map layers. Everything that draws terrain waits on this, so it
 // resolves rather than rejects when absent: no atlas means the drawn terrain,
 // which is a complete fallback rather than a broken board.
+// Tower tiers and projectiles. Same shape as the prop atlas: absent means
+// the game falls back, here to the standalone tier-one sprites.
+let TOWER_IMG = null;
+function loadTowerAtlas() {
+  return new Promise(resolve => {
+    const im = new Image();
+    im.onload = () => { if (im.naturalWidth) TOWER_IMG = im; resolve(); };
+    im.onerror = () => resolve();
+    im.src = 'assets/towers.png';
+  });
+}
+
+// Ten upgrade steps, three tiers of art. A tower has to look different for
+// money spent on it, but it also has to still read as the same tower, so the
+// steps are uneven on purpose: tier two arrives early enough to feel earned.
+function towerTier(t) {
+  const lvl = towerLevel(t);            // 1..10
+  return lvl >= 7 ? 2 : lvl >= 4 ? 1 : 0;
+}
+
 function loadPropAtlas() {
   return new Promise(resolve => {
     const im = new Image();
@@ -635,11 +655,20 @@ function drawTowers() {
       ctx.strokeStyle = 'rgba(255,211,77,.65)';
       ctx.stroke();
     }
-    const im = IMG[TOWERS[t.type].art];
-    if (!im || !im.naturalWidth) continue;
-    const s = Math.min(132 / im.naturalWidth, 132 / im.naturalHeight);
-    const w = im.naturalWidth * s, h = im.naturalHeight * s;
-    ctx.drawImage(im, t.x - w / 2, t.y + 10 - h, w, h);
+    const art = TOWER_IMG && typeof TOWER_ATLAS !== 'undefined'
+      && TOWER_ATLAS[t.type] && TOWER_ATLAS[t.type].tiers[towerTier(t)];
+    if (art) {
+      const [sx, sy, sw, sh] = art;
+      const s = Math.min(132 / sw, 132 / sh);
+      const w = sw * s, h = sh * s;
+      ctx.drawImage(TOWER_IMG, sx, sy, sw, sh, t.x - w / 2, t.y + 10 - h, w, h);
+    } else {
+      const im = IMG[TOWERS[t.type].art];
+      if (!im || !im.naturalWidth) continue;
+      const s = Math.min(132 / im.naturalWidth, 132 / im.naturalHeight);
+      const w = im.naturalWidth * s, h = im.naturalHeight * s;
+      ctx.drawImage(im, t.x - w / 2, t.y + 10 - h, w, h);
+    }
 
     const lvl = towerLevel(t);
     if (lvl > 1) {
@@ -724,13 +753,31 @@ function drawEnemies() {
 function drawShots() {
   for (const s of S.shots) {
     const colour = TOWERS[s.type].colour;
+    const art = TOWER_IMG && typeof TOWER_ATLAS !== 'undefined'
+      && TOWER_ATLAS[s.type] && TOWER_ATLAS[s.type].shot;
     ctx.save();
-    ctx.fillStyle = colour;
-    ctx.shadowColor = colour;
-    ctx.shadowBlur = 12;
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, 7, 0, Math.PI * 2);
-    ctx.fill();
+    if (art) {
+      const [sx, sy, sw, sh] = art;
+      // The sprites are drawn pointing up, so the heading is rotated a
+      // quarter turn. A bolt travelling sideways otherwise flies flat.
+      const ang = Math.atan2(s.target.y - s.y, s.target.x - s.x) + Math.PI / 2;
+      // 30 was the radius of the circle these replaced, and it made a painted
+      // icicle read as a speck. A projectile has to be legible in flight.
+      const k = 46 / Math.max(sw, sh);
+      ctx.translate(s.x, s.y);
+      ctx.rotate(ang);
+      ctx.shadowColor = colour;
+      ctx.shadowBlur = 9;
+      ctx.drawImage(TOWER_IMG, sx, sy, sw, sh,
+                    -sw * k / 2, -sh * k / 2, sw * k, sh * k);
+    } else {
+      ctx.fillStyle = colour;
+      ctx.shadowColor = colour;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 }
@@ -1159,7 +1206,8 @@ function frame(now) {
 }
 
 resize();
-Promise.all([loadAssets(), loadEnemyArt(), loadPropAtlas()]).then(() => {
+Promise.all([loadAssets(), loadEnemyArt(), loadPropAtlas(),
+              loadTowerAtlas()]).then(() => {
   bakeEnemyFrames();
   bootSay.textContent = 'ready';
   el('btnMusic').querySelector('img').src =
