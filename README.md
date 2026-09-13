@@ -110,6 +110,60 @@ would be a composite pass per hit per frame; baked once, a hit is a
 expands, so they are padded to a common box rather than trimmed to one: trimmed
 individually, the burst drifts as it plays.
 
+## Specialisations
+
+Three stat tracks — damage, range, fire rate, three levels each — make a tower
+bigger. They never make it a *different* tower, and the simulation had already
+shown that what decides a level is which tower answers its roster. So maxing
+any track opens a permanent, one-time fork: two specialisations per tower,
+bought once, no sell-back.
+
+| tower | | |
+|---|---|---|
+| **fire** | BURN — less hit damage, sets alight; ignores armour, stops regen | SCORCH — fires slower, every shot bursts |
+| **ice** | SHATTER — barely damages; what it slows takes +55% from *every* tower | DEEP FREEZE — almost no damage; slows harder, longer, and slow-immune kinds |
+| **bolt** | OVERLOAD — weaker bolts, arcs to four more | LANCE — no chain, slower, double damage through armour |
+| **arcane** | SIEGE — far wider blast, a third less reach | RIFT — half again the reach, hits for little, drags what it catches |
+
+Each answers a threat the next-wave panel names, so the warning and the
+purchase are one conversation. SHATTER is the odd one and the point of the
+set: it is the only tower whose worth depends on what is standing around it.
+
+**Every fork costs something.** See the Balance section for what happened when
+they did not. Tune them with `node tools/sim.mjs --forks`, which varies one
+fork at a time against a fixed build and reports where each is the best answer.
+The target shape is every option best *somewhere* and best *nowhere near
+everywhere*.
+
+`node tools/specs.mjs` asks the other question — whether a fork does anything
+at all. A behaviour that silently fails scores exactly like the base tower, so
+a sweep cannot see it; the bench puts one tower against one enemy kind and
+reads the mechanic directly.
+
+A specialised tower is marked on the board by a pool of the mechanic's colour
+on the ground under it. Text does not work there: the map draws at about a
+fifth of size on a phone, so a thirteen-pixel badge becomes four and its
+letters become nothing.
+
+## Telling the player what is coming
+
+Between waves the HUD shows the next wave's roster as portraits with counts,
+threat warnings, and how far off the next boss is. All of it is **derived**
+from the level's roster and its wave curve — ARMOUR appears because a kind in
+that wave has `armour` below one, AIR because one has `flying`, and so on,
+each test reading the exact property the combat code reads. Swap a level's
+heavy for an armoured one and the warning follows for free.
+
+A threat that is new this wave is loud; one carried over from the wave before
+is muted. The first version warned on every wave the threat applied to, which
+was correct and useless — a siege level showed ARMOUR fifteen times out of
+fifteen. A signal that is always on is wallpaper.
+
+`node tools/layout.mjs` checks every HUD box against every other at six
+viewports and exits non-zero on an overlap. It exists because the wave counter
+shipped drawn *on top of* the stats box on a portrait phone, and no unit test
+would have caught that.
+
 ## Where the terrain comes from
 
 The pack ships each map as **separate layers** rather than as a flat picture: a
@@ -184,22 +238,27 @@ spawn point, or towers that can be repositioned, would each add one.
 ## Balance
 
 Simulation-checked, not guessed. `tools/sim.mjs` runs the real `game.js`
-headlessly through all six maps, three difficulties and five build strategies
-— ninety runs in a few seconds.
+headlessly through all six maps, three difficulties and nine build strategies
+— 162 runs in under a minute.
 
 ```
-level           easy            normal          hard
-1. landing      10/10 win 25/25 8/10 win 18/20  5/10 win 4/18
-2. palmrun      10/10 win 25/25 8/10 win 18/20  5/10 win 8/18
-3. deepwood     10/10 win 25/25 8/10 win 17/20  4/10 win 5/18
-4. millpond     10/10 win 25/25 8/10 win 17/20  2/10 win 3/18
-5. frostgate    10/10 win 25/25 8/10 win 16/20  3/10 win 6/18
-6. longroad     10/10 win 25/25 10/10 win 19/20 4/10 win 8/18
+level           easy         normal        hard
+1. landing      9/9 win 25/25 9/9 win 13/20 3/9 win 8/18
+2. palmrun      9/9 win 25/25 7/9 win 17/20 4/9 win 10/18
+3. deepwood     9/9 win 24/25 7/9 win 16/20 1/9 win 7/18
+4. millpond     9/9 win 24/25 7/9 win 18/20 4/9 win 14/18
+5. frostgate    9/9 win 24/25 6/9 win 14/20 3/9 win 3/18
+6. longroad     9/9 win 25/25 6/9 win 20/20 4/9 win 15/18
 ```
 
-Easy is comfortable, normal is cleared by four of five builds, hard is tight
-and winnable on every map. Read it as a spread: a level nothing clears is a
-wall, a level everything clears is not asking anything.
+Easy is comfortable, normal is cleared by most builds, hard is tight and
+winnable on every map. Read it as a spread: a level nothing clears is a wall,
+a level everything clears is not asking anything.
+
+**The sweep is noisy.** The wave queue is shuffled, so repeating it on
+unchanged code moves each strategy by about two runs in eighteen. A one-run
+lead means nothing. What is worth acting on is a build or a fork that wins
+nearly everything, or nearly nothing.
 
 Four things the simulation found that reading the code would not have:
 
@@ -218,6 +277,17 @@ Four things the simulation found that reading the code would not have:
   It chains once now, and costs more.
 - **Ice and arcane were priced as damage towers while dealing almost none**, so
   an opening built on them lost by wave 3.
+- **Specialisations that only give are not choices.** The first version of the
+  tower forks cost energy and nothing else. A mixed build taking either spec
+  set won 17 or 18 of 18 against 16 for the same build without them, and
+  cleared the hardest level without losing a life. Every fork now trades away
+  damage, rate or reach for what it gains — which is the only thing that lets
+  a fork be the *wrong* pick on a given level.
+- **A spec set hides which half of it is working.** Measured as pairs,
+  `scorch+freeze` beat `burn+shatter` and the reason was invisible. Varying one
+  fork at a time (`--forks`) showed SCORCH best on eleven of twelve
+  level-and-difficulty pairs — strictly correct, therefore not a decision — and
+  BURN *worse than buying nothing*, a trap. Both are now middling.
 
 Starting energy is deliberately similar across difficulties: it has to buy an
 opening of three towers everywhere. Hard starting at two towers was a cliff,
@@ -231,6 +301,13 @@ npm i playwright && node tools/sim.mjs          # the summary table above
 node tools/sim.mjs --full                       # every run, itemised
 node tools/sim.mjs --level deepwood --runs 3    # one map, repeated
 node tools/sim.mjs --rosters 40                 # how distinct can levels be
+node tools/sim.mjs --forks                      # one tower fork at a time
+
+# Does each specialisation actually DO anything? (a sweep cannot tell)
+node tools/specs.mjs
+
+# Does the HUD collide with itself at any size?
+node tools/layout.mjs
 
 # Replace art (towers, enemies, UI — no backgrounds)
 python3 tools/build-assets.py --list ~/art        # what filenames are accepted
@@ -353,28 +430,39 @@ Deliberate omissions, not oversights:
   from the pack's JPEGs by keying the black surround — good, but inferred.
   See **Dropping in the real art** above. This no longer touches backgrounds,
   only towers, enemies and UI.
+- **Gems accumulate and buy nothing.** One per wave cleared, five per level.
+  They are the obvious hook for permanent progression and currently a number
+  that goes up. Either spend them or remove them.
+- **Bosses are a large health bar.** The demon has sixteen times the hit points
+  and no mechanic of its own — no summoning, no shield phase, nothing that
+  changes how the wave is fought. The next-wave panel now announces it
+  properly, which rather draws attention to there being nothing behind the
+  announcement.
+- **Maps differ by geometry, roster and curve only.** No conveyor, no second
+  entrance, no hazard, no tower restriction. The renderer also has no
+  elevation, so cliffs, bridges and crossing roads all need height support it
+  does not have.
+- **No risk/reward wager.** Calling a wave early for +3 energy a second is the
+  only one in the game.
+- **No music.** The toggle persists and the sound effects are synthesised
+  oscillators — there are no audio assets in the pack at all.
+- **No achievements.** The pack has a window for them; nothing opens it,
+  because there are no achievements yet to put in it.
 - **The victory header reads "ACHIEVEMENT"** — the closest thing to a
   celebratory header the pack has. It wants a real one.
 - **Only walk and die are used.** The pack also ships attack, hurt, idle, jump
   and run per type. An attack animation when something reaches the end is
   art-complete and code-only.
-- **Water is still drawn, not painted**, and it shows most on the dark kits —
-  a bright pond in a volcano should probably be lava. The packs ship a
-  `lake.png` per kit that nothing uses.
-- **`mixed` clears every level.** A balanced build being universally viable is
-  correct; the thing worth watching is whether a *specialised* build ever wins
-  everything, which is what the sim's per-level answer list is for.
-- **No music.** The toggle persists and the sound effects are synthesised.
-- **No achievements.** The pack has a window for them; nothing opens it,
-  because there are no achievements yet to put in it.
-- **The renderer has no elevation.** Cliffs, bridges and roads that cross
-  would all add map variety, and all need the renderer to understand height,
-  which it currently does not.
 - **Water is still drawn, not painted.** The pack ships a `lake.png` per kit;
-  the game draws an ellipse. It shows most in frost and ash.
+  the game draws an ellipse. It shows most on the dark kits — a bright pond in
+  a volcano should probably be lava.
 - **The pack has a second tower family** — catapults and ballistae, with archer
   units that have their own bow animations. A tower that fires a visible unit
   rather than a bolt would use them, and nothing does yet.
 - **Chain lightning is still drawn**, not painted: the arc between chained
   targets is a stroked line. The pack has no art for it, so this one would
   stay drawn even with everything else swapped.
+- **Android packaging has never been done.** The two blockers a WebView build
+  would have hit are fixed — the level select renders from `file://`, and the
+  hardware back button walks the overlay stack down to the menu — but nothing
+  has been wrapped, signed or run on a device.
