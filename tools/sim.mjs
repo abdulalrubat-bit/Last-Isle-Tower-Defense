@@ -35,6 +35,11 @@ const runs = args.includes('--runs') ? Number(args[args.indexOf('--runs') + 1]) 
 const full = args.includes('--full');      // every strategy x level x difficulty
 const lvlArg = args.includes('--level') ? args[args.indexOf('--level') + 1] : null;
 const sweep = args.includes('--rosters') ? Number(args[args.indexOf('--rosters') + 1]) : 0;
+// --forks isolates ONE specialisation at a time against a fixed mixed build,
+// which is the only way to see which fork is carrying a spec SET. Measuring
+// sets alone said "scorch+freeze is better" without saying which half of it
+// was doing the work.
+const forks = args.includes('--forks');
 
 const srv = http.createServer((q, r) => {
   let f = decodeURIComponent(q.url.split('?')[0]);
@@ -54,13 +59,26 @@ page.on('pageerror', e => errors.push(e.message));
 await page.goto('http://localhost:8731/', { waitUntil: 'networkidle' });
 await page.waitForFunction(() => !document.getElementById('boot'), null, { timeout: 20000 });
 
-const rows = await page.evaluate(({ only, runs, full, lvlArg, sweep }) => {
+const rows = await page.evaluate(({ only, runs, full, lvlArg, sweep, forks }) => {
   const STRATS = {
     'mixed/cheapest':    { build:['fire','fire','bolt','ice','arcane','fire','bolt','arcane','ice','bolt','fire'], pick:'cheap' },
     'mixed/damage':      { build:['fire','fire','bolt','ice','arcane','fire','bolt','arcane','ice','bolt','fire'], pick:'dmg' },
     'bolt-heavy/damage': { build:['fire','bolt','bolt','ice','bolt','bolt','arcane','bolt','ice','bolt','bolt'],   pick:'dmg' },
     'fire-rush/rate':    { build:['fire','fire','fire','fire','fire','fire','fire','fire','fire','fire','fire'],   pick:'rate' },
     'arcane+ice/damage': { build:['fire','ice','arcane','arcane','ice','arcane','arcane','ice','arcane','bolt','arcane'], pick:'dmg' },
+    // Specialised builds. Same tower mixes as above, but each names the fork
+    // its towers take once a track maxes. A spec is a permanent, one-time
+    // purchase, so these are the shapes a real player actually ends up with —
+    // and if none of them changes which levels are winnable, the forks are
+    // decoration and should be cut rather than shipped.
+    'mixed/burn+shatter': { build:['fire','fire','bolt','ice','arcane','fire','bolt','arcane','ice','bolt','fire'], pick:'dmg',
+                            spec:{ fire:'burn', ice:'shatter', bolt:'lance', arcane:'siege' } },
+    'mixed/scorch+freeze':{ build:['fire','fire','bolt','ice','arcane','fire','bolt','arcane','ice','bolt','fire'], pick:'dmg',
+                            spec:{ fire:'scorch', ice:'freeze', bolt:'overload', arcane:'rift' } },
+    'boss-killer/lance':  { build:['fire','bolt','bolt','ice','bolt','bolt','arcane','bolt','ice','bolt','bolt'],   pick:'dmg',
+                            spec:{ fire:'burn', ice:'shatter', bolt:'lance', arcane:'siege' } },
+    'swarm-clear/siege':  { build:['fire','ice','arcane','arcane','ice','arcane','arcane','ice','arcane','bolt','arcane'], pick:'dmg',
+                            spec:{ fire:'scorch', ice:'shatter', bolt:'overload', arcane:'siege' } },
   };
 
   function play(levelIndex, diff, cfg) {
@@ -86,7 +104,7 @@ const rows = await page.evaluate(({ only, runs, full, lvlArg, sweep }) => {
         const type = cfg.build[n % cfg.build.length], def = TOWERS[type];
         if (S.energy >= def.cost) {
           S.energy -= def.cost;
-          S.towers.push({ x:pads[pad][0], y:pads[pad][1], pad, type,
+          S.towers.push({ x:pads[pad][0], y:pads[pad][1], pad, type, spec:null,
             up:{dmg:0,range:0,rate:0}, spent:def.cost, cool:260, angle:0 });
         }
       }
@@ -104,6 +122,16 @@ const rows = await page.evaluate(({ only, runs, full, lvlArg, sweep }) => {
         if (!bt) break;
         const c = upgradeCost(bt, bk);
         S.energy -= c; bt.spent += c; bt.up[bk]++;
+      }
+      // Take the fork as soon as it opens and is affordable. Buying it early
+      // is the point — a spec bought at wave 14 has nothing left to change.
+      if (!cfg.spec) return;
+      for (const t of S.towers) {
+        if (t.spec || !specUnlocked(t)) continue;
+        const want = cfg.spec[t.type];
+        const c = specCost(t);
+        if (!want || S.energy < c * 1.2) continue;
+        S.energy -= c; t.spent += c; t.spec = want;
       }
     }
 
@@ -156,6 +184,28 @@ const rows = await page.evaluate(({ only, runs, full, lvlArg, sweep }) => {
     return { sweep: true, tried, distinct: [...seen.entries()] };
   }
 
+  if (forks) {
+    // One tower type's fork varied, everything else left unspecialised, on the
+    // difficulty where a wrong choice actually costs the run. A fork that is
+    // never the best answer on any level is a trap; one that is always the
+    // best answer is not a choice.
+    const base = STRATS['mixed/damage'];
+    const res = [];
+    for (const type of Object.keys(SPECS)) {
+      for (const opt of [null, ...SPECS[type].map(x => x.id)]) {
+        const cfg = Object.assign({}, base, { spec: opt ? { [type]: opt } : null });
+        for (let li = 0; li < LEVELS.length; li++) {
+          for (const diff of ['normal', 'hard']) {
+            const r = play(li, diff, cfg);
+            res.push({ type, opt: opt || '(none)', level: LEVELS[li].id, diff,
+                       won: r.won, lives: r.lives, of: r.of, wave: r.wave });
+          }
+        }
+      }
+    }
+    return { forks: true, res };
+  }
+
   const out = [];
   const levels = lvlArg == null ? LEVELS.map((_, i) => i)
                                 : [LEVELS.findIndex(l => l.id === lvlArg)].filter(i => i >= 0);
@@ -172,7 +222,42 @@ const rows = await page.evaluate(({ only, runs, full, lvlArg, sweep }) => {
     }
   }
   return out;
-}, { only, runs, full, lvlArg, sweep });
+}, { only, runs, full, lvlArg, sweep, forks });
+
+if (rows && rows.forks) {
+  // Score each option by lives left, not wins: on a level every option clears,
+  // the margin is the only thing that separates them.
+  const types = [...new Set(rows.res.map(r => r.type))];
+  for (const type of types) {
+    const rs = rows.res.filter(r => r.type === type);
+    const opts = [...new Set(rs.map(r => r.opt))];
+    console.log(`\n== ${type.toUpperCase()} ==`);
+    console.log('  option        wins   avg lives   best on');
+    const bestOn = {};
+    for (const key of [...new Set(rs.map(r => r.level + '/' + r.diff))]) {
+      const here = rs.filter(r => r.level + '/' + r.diff === key);
+      const top = Math.max(...here.map(r => (r.won ? 1000 : 0) + r.lives));
+      for (const r of here) {
+        if ((r.won ? 1000 : 0) + r.lives === top) (bestOn[r.opt] ||= []).push(key);
+      }
+    }
+    for (const o of opts) {
+      const mine = rs.filter(r => r.opt === o);
+      const w = mine.filter(r => r.won).length;
+      const avg = (mine.reduce((a, r) => a + r.lives, 0) / mine.length).toFixed(1);
+      const best = bestOn[o] || [];
+      console.log(`  ${o.padEnd(12)} ${String(w).padStart(2)}/${mine.length}` +
+        `   ${avg.padStart(8)}   ${best.length ? best.join(' ') : '\u2014 never'}`);
+    }
+  }
+  console.log('\nA fork that is best nowhere is a trap. One that is best everywhere');
+  console.log('is not a choice. Each should win somewhere and lose somewhere.');
+  console.log('\nNOTE: the wave queue is shuffled, so repeated sweeps of the SAME');
+  console.log('build vary by about two runs in eighteen. Treat a gap under three');
+  console.log('as noise — the useful signal is a fork best on nearly every pair');
+  console.log('(too strong) or on none (a trap), not a one-run lead.');
+  await browser.close(); srv.close(); process.exit(0);
+}
 
 if (rows && rows.sweep) {
   console.log('curve: fodder/fast/heavy                builds that clear it on normal');

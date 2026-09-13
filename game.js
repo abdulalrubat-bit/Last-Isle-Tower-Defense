@@ -113,6 +113,106 @@ const TRACKS = {
 const TRACK_ORDER = ['dmg', 'range', 'rate'];
 const MAX_TRACK = 3;
 
+// ---------------------------------------------------------------- specs ---
+//
+// Maxing ANY of the three tracks opens a one-time, permanent fork: two
+// specialisations per tower, and the tower keeps whichever is bought.
+//
+// The rule every one of these follows is that it changes what the tower DOES,
+// not how big its numbers are. Three levels of DAMAGE is the same tower
+// hitting harder; BURN is a different tower. That matters because the game
+// already proved — in the simulation, across six levels — that the interesting
+// question is which tower answers which roster, and a pure stat ladder cannot
+// change the answer to that question, only the speed at which you reach it.
+//
+// Each fork is also an answer to a threat the next-wave panel names, so the
+// warning and the purchase are the same conversation:
+//
+//   ARMOUR  -> fire/BURN, bolt/LANCE (both bypass it)
+//   REGEN   -> fire/BURN (damage over time never lets regen start)
+//   SPLITS  -> fire/SCORCH, arcane/SIEGE (the children die to the same hit)
+//   NO SLOW -> ice/DEEP FREEZE (the only thing that slows a slow-immune kind)
+//   BOSS    -> bolt/LANCE (all of it into one target)
+//
+// ice/SHATTER is the odd one and the point of the set: it deals almost no
+// damage itself and instead makes everything ELSE hit a slowed enemy harder.
+// It is the first tower in the game whose value depends on the other towers
+// around it, which is the whole of "build discovery" in one purchase.
+//
+// EVERY fork costs something. The first cut of this table did not, and the
+// sweep was blunt about it: a mixed build that took any spec set won 17 or 18
+// of 18, against 16 for the same build without them, and cleared the hardest
+// level without losing a single life. That is not a choice, it is a button
+// marked WIN, and the two sets scored within one run of each other so the
+// fork itself decided nothing either. Each one now gives up damage, rate or
+// reach for what it gains, which is what makes it possible for a fork to be
+// WRONG on a given level — and a fork that cannot be wrong is decoration.
+const SPECS = {
+  fire: [
+    { id:'burn',   name:'BURN',
+      blurb:'Weaker hits, but they set the target alight. Burning ignores\narmour and keeps regeneration from ever starting.',
+      mod:{ dmgMul:0.70, burnDps:0.58, burnFor:2600 } },
+    { id:'scorch', name:'SCORCH',
+      blurb:'Every shot bursts. Fires slower, but kills crowds and finishes\nwhat a splitter leaves behind.',
+      mod:{ rateMul:1.58, splash:62, splashDmg:0.50 } },
+  ],
+  ice: [
+    { id:'shatter', name:'SHATTER',
+      blurb:'Barely scratches anything itself. Everything it slows takes\n+55% damage from EVERY other tower.',
+      mod:{ dmgMul:0.45, slowFor:1000, shatter:1.55 } },
+    { id:'freeze',  name:'DEEP FREEZE',
+      blurb:'Deals almost no damage. In exchange the slow bites harder,\nlasts twice as long, and works on kinds that are\notherwise immune to it.',
+      mod:{ dmgMul:0.48, slow:0.36, slowFor:2800, pierceSlowImmune:0.66 } },
+  ],
+  bolt: [
+    { id:'overload', name:'OVERLOAD',
+      blurb:'Each bolt is much weaker, but arcs to four more targets and\nbarely fades on the way.',
+      mod:{ dmgMul:0.55, chain:4, chainRange:150, chainFalloff:0.78 } },
+    { id:'lance',    name:'LANCE',
+      blurb:'Stops chaining and fires far slower, putting all of it into one\ntarget: double damage, straight through armour.',
+      mod:{ chain:0, dmgMul:2.30, rateMul:1.55, pierce:true } },
+  ],
+  arcane: [
+    { id:'siege', name:'SIEGE',
+      blurb:'A far wider blast at full damage, at the cost of most of its\nreach. A mortar, not a sniper.',
+      mod:{ splash:124, splashDmg:1.0, rangeMul:0.72 } },
+    { id:'rift',  name:'RIFT',
+      blurb:'Reaches half again as far and drags everything it catches to a\ncrawl, but hits for little.',
+      mod:{ rangeMul:1.50, dmgMul:0.55, splashSlow:0.66, splashSlowFor:1400 } },
+  ],
+};
+
+// Read the mechanic, not the tower: burn and scorch are both fire, but one is
+// a lingering flame and the other a burst, and the discs say so.
+const SPEC_COLOUR = {
+  burn:'#c8471c', scorch:'#e08a1e', shatter:'#3f8fbf', freeze:'#5ec8e8',
+  overload:'#c9a91b', lance:'#8f7be0', siege:'#a33a2a', rift:'#7a3fb0',
+};
+
+function specUnlocked(t) {
+  return TRACK_ORDER.some(k => t.up[k] >= MAX_TRACK);
+}
+function specOf(t) {
+  return t.spec ? SPECS[t.type].find(x => x.id === t.spec) : null;
+}
+function specCost(t) {
+  return Math.round(TOWERS[t.type].cost * 1.4);
+}
+
+// The tower as combat sees it: its base, with the chosen specialisation's
+// changes laid over the top. Everything that fires or resolves a hit reads
+// this rather than TOWERS[t.type], so a spec needs no special case anywhere.
+const defCache = new WeakMap();
+function towerDef(t) {
+  if (!t.spec) return TOWERS[t.type];
+  let c = defCache.get(t);
+  if (!c || c.spec !== t.spec) {
+    c = { spec: t.spec, def: Object.assign({}, TOWERS[t.type], specOf(t).mod) };
+    defCache.set(t, c);
+  }
+  return c.def;
+}
+
 function upgradeCost(tower, track) {
   const lvl = tower.up[track];
   return Math.round(TOWERS[tower.type].cost * 0.55 * Math.pow(1.65, lvl));
@@ -693,6 +793,7 @@ function spawn(kind, atDist) {
     kind, dist: atDist || 0, hp, maxHp: hp,
     speed: BASE_SPEED * k.speed * d.speed,
     slowUntil: 0, slowFactor: 1, hurtUntil: 0, wasSplit: false,
+    burnUntil: 0, burnDps: 0, shatterUntil: 0, shatterMul: 1,
     reward: Math.round((7 + S.wave * 1.6) * k.reward),
     anim: Math.random() * 1000,
     x: 0, y: 0, angle: 0,
@@ -734,6 +835,10 @@ function finish(won) {
 
 function damage(e, amount, ignoreArmour) {
   if (e.hp <= 0) return;
+  // A SHATTER mark is left on the ENEMY by the ice tower that slowed it, not
+  // held on the tower, so every other tower's hits are amplified without any
+  // of them needing to know an ice tower exists.
+  if (e.shatterUntil && S.time < e.shatterUntil) amount *= e.shatterMul;
   e.hp -= ignoreArmour ? amount : amount * (KINDS[e.kind].armour ?? 1);
   e.hurtUntil = S.time + HURT_MS;
   if (e.hp <= 0) {
@@ -756,12 +861,32 @@ function damage(e, amount, ignoreArmour) {
   }
 }
 
-function splash(x, y, radius, dmg, source) {
+// Slowing in one place, because three things now do it: the ice tower, RIFT's
+// blast, and DEEP FREEZE. A slow-immune kind normally shrugs it off entirely;
+// pierceSlowImmune is the only thing that gets through, and at reduced bite.
+function applySlow(e, def) {
+  let factor = def.slow;
+  if (KINDS[e.kind].slowImmune) {
+    if (!def.pierceSlowImmune) return;
+    factor = def.pierceSlowImmune;
+  }
+  // Never let a weaker slow overwrite a stronger one that is still running.
+  if (S.time < e.slowUntil && e.slowFactor < factor) return;
+  e.slowUntil = S.time + def.slowFor;
+  e.slowFactor = factor;
+  if (def.shatter) { e.shatterUntil = e.slowUntil; e.shatterMul = def.shatter; }
+}
+
+function splash(x, y, radius, dmg, source, def) {
   for (const e of S.enemies) {
     if (e.hp <= 0 || e === source) continue;
     const d = Math.hypot(e.x - x, e.y - y);
     // Splash ignores armour: it is the answer to an armoured roster.
-    if (d <= radius) damage(e, dmg * (1 - 0.5 * d / radius), true);
+    if (d > radius) continue;
+    damage(e, dmg * (1 - 0.5 * d / radius), true);
+    if (def && def.splashSlow) {
+      applySlow(e, { slow: def.splashSlow, slowFor: def.splashSlowFor });
+    }
   }
   S.fx.push({ kind: 'boom', x, y, r: radius, ttl: 420, life: 420 });
 }
@@ -778,7 +903,7 @@ function chain(from, first, def, dmg) {
     }
     if (!next) break;
     power *= def.chainFalloff;
-    damage(next, power);
+    damage(next, power, def.pierce);
     hit.add(next);
     S.fx.push({ kind:'arc', x1:cur.x, y1:cur.y, x2:next.x, y2:next.y, ttl:140, life:140 });
     prev = cur; cur = next;
@@ -811,6 +936,13 @@ function update(dt) {
     const ek = KINDS[e.kind];
     const factor = S.time < e.slowUntil ? e.slowFactor : 1;
     e.dist += e.speed * factor * dt / 1000;
+    // Burning ticks before regeneration is considered, and goes through
+    // damage() so it refreshes hurtUntil — which is what makes BURN the
+    // answer to a regenerating roster rather than merely extra damage.
+    if (e.burnUntil && S.time < e.burnUntil) {
+      damage(e, e.burnDps * dt / 1000, true);
+      if (e.hp <= 0) continue;
+    }
     // Regeneration is held off by recent damage, so sustained fire beats it
     // and chip damage does not.
     if (ek.regen && S.time > e.hurtUntil + 1500 && e.hp < e.maxHp) {
@@ -841,7 +973,7 @@ function update(dt) {
     if (!target) continue;
     t.angle = Math.atan2(target.y - t.y, target.x - t.x);
     if (t.cool > 0) continue;
-    const def = TOWERS[t.type];
+    const def = towerDef(t);
     S.shots.push({
       x: t.x, y: t.y - 40, target, from: t,
       speed: def.shot, dmg: towerDamage(t), type: t.type,
@@ -856,13 +988,19 @@ function update(dt) {
     const dx = e.x - s.x, dy = e.y - s.y, d = Math.hypot(dx, dy);
     const step = s.speed * dt / 1000;
     if (d <= step + 12) {
-      const def = TOWERS[s.type];
-      damage(e, s.dmg);
-      if (def.slow && !KINDS[e.kind].slowImmune) {
-        e.slowUntil = S.time + def.slowFor;
-        e.slowFactor = def.slow;
+      const def = s.from ? towerDef(s.from) : TOWERS[s.type];
+      damage(e, s.dmg, def.pierce);
+      if (def.slow) applySlow(e, def);
+      if (def.burnDps) {
+        // Refreshes rather than stacks: two fire towers on one target should
+        // not multiply, and a burning enemy never gets the 1.5s of quiet its
+        // regeneration needs.
+        e.burnDps = s.dmg * def.burnDps;
+        e.burnUntil = S.time + def.burnFor;
       }
-      if (def.splash) splash(e.x, e.y, def.splash, s.dmg * (def.splashDmg ?? 0.7), e);
+      if (def.splash) {
+        splash(e.x, e.y, def.splash, s.dmg * (def.splashDmg ?? 0.7), e, def);
+      }
       if (def.chain) chain(s.from, e, def, s.dmg);
       if (!def.splash) {
         // Splash draws its own explosion; a spark on top of it is noise.
@@ -890,9 +1028,13 @@ function update(dt) {
   if (S.phase === 'clearing' && !S.enemies.length) waveCleared();
 }
 
-function towerRange(t)  { return TOWERS[t.type].range * (1 + TRACKS.range.step * t.up.range); }
-function towerDamage(t) { return TOWERS[t.type].dmg   * (1 + TRACKS.dmg.step   * t.up.dmg); }
-function towerRate(t)   { return Math.max(180, TOWERS[t.type].rate * Math.pow(1 - TRACKS.rate.step, t.up.rate)); }
+function towerRange(t)  { const d = towerDef(t);
+  return d.range * (1 + TRACKS.range.step * t.up.range) * (d.rangeMul || 1); }
+function towerDamage(t) { const d = towerDef(t);
+  return d.dmg * (1 + TRACKS.dmg.step * t.up.dmg) * (d.dmgMul || 1); }
+function towerRate(t)   { const d = towerDef(t);
+  return Math.max(180, d.rate * Math.pow(1 - TRACKS.rate.step, t.up.rate)
+                      * (d.rateMul || 1)); }
 function towerLevel(t)  { return 1 + t.up.dmg + t.up.range + t.up.rate; }
 
 /* ------------------------------------------------------------- render ---- */
@@ -957,6 +1099,35 @@ function drawPads() {
   }
 }
 
+// A specialised tower has to be readable from the board, not only from the
+// panel — a player deciding where the next one goes needs to see what is
+// already down.
+//
+// This started as a disc carrying the spec's first three letters, which was
+// unreadable: the map draws at about a fifth of its size on a phone, so
+// thirteen pixels of badge becomes four and the text becomes nothing. The
+// second try was a ring around the tower's footing, drawn after the sprite,
+// which the sprite then covered half of. What survives phone scale is a pool
+// of saturated colour on the GROUND, drawn before the tower stands on it.
+function drawSpecMark(t) {
+  const sp = specOf(t);
+  if (!sp) return;
+  const c = SPEC_COLOUR[sp.id] || '#d8b56a';
+  ctx.save();
+  ctx.translate(t.x, t.y + 2);
+  ctx.scale(1, 0.44);                  // flattened, so it lies on the ground
+  ctx.beginPath();
+  ctx.arc(0, 0, 52, 0, Math.PI * 2);
+  ctx.globalAlpha = 0.38;
+  ctx.fillStyle = c;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = c;
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawTowers() {
   for (const t of S.towers) {
     if (t === S.openTower) {
@@ -968,6 +1139,7 @@ function drawTowers() {
       ctx.strokeStyle = 'rgba(255,211,77,.65)';
       ctx.stroke();
     }
+    drawSpecMark(t);
     const art = TOWER_IMG && typeof TOWER_ATLAS !== 'undefined'
       && TOWER_ATLAS[t.type] && TOWER_ATLAS[t.type].tiers[towerTier(t)];
     if (art) {
@@ -998,6 +1170,7 @@ function drawTowers() {
       ctx.textBaseline = 'middle';
       ctx.fillText(String(lvl), t.x + 26, t.y + 5);
     }
+
   }
 }
 
@@ -1227,7 +1400,10 @@ function closeUpgrade() {
 function renderUpgrade() {
   const t = S.openTower;
   if (!t) return;
-  el('upgradeName').textContent = TOWERS[t.type].name;
+  const sp = specOf(t);
+  el('upgradeName').textContent = sp
+    ? `${TOWERS[t.type].name.replace(' TOWER', '')} \u00b7 ${sp.name}`
+    : TOWERS[t.type].name;
   el('upgradeMeta').textContent =
     `LEVEL ${towerLevel(t)}  ·  DMG ${Math.round(towerDamage(t))}  ·  ` +
     `RNG ${Math.round(towerRange(t))}  ·  ${(1000 / towerRate(t)).toFixed(1)}/s`;
@@ -1262,6 +1438,55 @@ function renderUpgrade() {
     });
     wrap.appendChild(b);
   }
+  renderSpec(t);
+}
+
+// The fork. Nothing at all until a track is maxed — a choice the player cannot
+// yet make is only clutter — then two cards, then a banner naming what they
+// bought. Buying is permanent: there is no sell-back on a spec, which is what
+// makes it a decision rather than a setting.
+function renderSpec(t) {
+  const row = el('specRow');
+  row.innerHTML = '';
+  if (!specUnlocked(t)) return;
+
+  const chosen = specOf(t);
+  if (chosen) {
+    row.innerHTML =
+      `<div id="specHdr">SPECIALISED</div>` +
+      `<div id="specHas"><div class="n">${chosen.name}</div>` +
+      `<div class="d">${chosen.blurb}</div></div>`;
+    return;
+  }
+
+  const hdr = document.createElement('div');
+  hdr.id = 'specHdr';
+  hdr.textContent = 'CHOOSE ONE — PERMANENT';
+  row.appendChild(hdr);
+
+  const pick = document.createElement('div');
+  pick.id = 'specPick';
+  const cost = specCost(t);
+  for (const sp of SPECS[t.type]) {
+    const b = document.createElement('button');
+    b.className = 'specCard';
+    b.disabled = S.energy < cost;
+    b.innerHTML = `<span class="n">${sp.name}</span>` +
+                  `<span class="d">${sp.blurb}</span>` +
+                  `<span class="buy">${cost}</span>`;
+    b.addEventListener('click', () => {
+      if (t.spec || S.energy < cost) return;
+      S.energy -= cost;
+      t.spent += cost;
+      t.spec = sp.id;
+      S.dirty = true;
+      sfx('build');
+      toast(`${TOWERS[t.type].name} \u2192 ${sp.name}`);
+      renderUpgrade();
+    });
+    pick.appendChild(b);
+  }
+  row.appendChild(pick);
 }
 
 function showResult(won, stars) {
@@ -1465,7 +1690,8 @@ function tapBoard(clientX, clientY) {
   S.energy -= def.cost;
   S.towers.push({
     x: pads[pick][0], y: pads[pick][1], pad: pick, type: S.selectedType,
-    up: { dmg: 0, range: 0, rate: 0 }, spent: def.cost, cool: 260, angle: 0,
+    up: { dmg: 0, range: 0, rate: 0 }, spec: null,
+    spent: def.cost, cool: 260, angle: 0,
   });
   S.dirty = true;
   sfx('build');

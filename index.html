@@ -157,6 +157,7 @@
     font:900 clamp(11px,2vw,17px) Arial;text-shadow:2px 2px #21140d}
   #upgradeCards{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;
     min-height:0}
+  #specRow{flex:0 0 auto}
   .upCard{position:relative;border:0;background:transparent;padding:0;min-width:0;
     display:flex;flex-direction:column;align-items:center;justify-content:flex-end}
   .upCard>img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
@@ -170,6 +171,35 @@
     font:900 clamp(10px,1.7vw,14px) Arial}
   .upCard[disabled]{opacity:.45}
   .upCard:not([disabled]):active{transform:scale(.95)}
+
+  /* The specialisation fork. Hidden until a track is maxed, then two cards;
+     after one is bought, a single banner saying which. It is deliberately a
+     different shape to the three stat cards above it — a permanent, one-time
+     choice should not look like another rung on a ladder. */
+  #specRow{margin-top:8px}
+  #specRow:empty{display:none}
+  #specHdr{text-align:center;color:#ffcf7a;letter-spacing:1.5px;
+    font:900 clamp(9px,1.5vw,12px) Arial;text-shadow:2px 2px #21140d;
+    margin-bottom:5px}
+  #specPick{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:stretch}
+  .specCard{border:3px solid #8a6a2e;border-radius:14px;background:#2a1a0f;
+    padding:7px 8px;text-align:left;color:var(--cream);min-width:0;
+    display:flex;flex-direction:column;gap:3px}
+  .specCard .n{font:900 clamp(11px,1.9vw,15px) Arial;color:var(--gold);
+    text-shadow:2px 2px #21140d}
+  .specCard .d{font:700 clamp(8px,1.35vw,11px) Arial;line-height:1.3;
+    color:#e6d3a8;white-space:pre-line}
+  .specCard .buy{align-self:flex-start;margin-top:auto;padding:2px 9px;
+    border-radius:9px;background:#1d120b;border:2px solid #d8b56a;color:#fff;
+    font:900 clamp(10px,1.6vw,13px) Arial}
+  .specCard[disabled]{opacity:.45}
+  .specCard:not([disabled]):active{transform:scale(.97)}
+  #specHas{border:3px solid #c08a34;border-radius:14px;background:#3a2a12;
+    padding:7px 10px;text-align:center}
+  #specHas .n{font:900 clamp(12px,2.1vw,17px) Arial;color:#ffd98a;
+    text-shadow:2px 2px #21140d}
+  #specHas .d{font:700 clamp(8px,1.35vw,11px) Arial;color:#e6d3a8;
+    line-height:1.3;white-space:pre-line;margin-top:2px}
   #upgradeActions{display:flex;align-items:center;justify-content:space-between;
     gap:10px;height:22%;margin-top:6px}
   #upgradeActions .iconBtn{height:100%;width:34%}
@@ -300,6 +330,9 @@
     #toast{bottom:15vh;font-size:11px}
     #upgradePanel{left:6%;right:6%;padding:9px}
     #upgradeCards{gap:5px}
+    #specPick{gap:5px}
+    .specCard{padding:5px 6px;border-radius:11px}
+    #specRow{margin-top:5px}
     #upgradeClose{width:46px;height:46px}
     .win{width:95vw;height:82vh}
   }
@@ -313,6 +346,18 @@
     .slot{max-width:62px}
     #stats{width:180px}
     #battleInfo{padding:4px 9px}
+    /* Landscape is how the game is actually held, and there the board fills
+       the screen — so a tall panel parked at top-centre sits on the road. It
+       only shows between waves and taps pass straight through it, but it
+       still hides a pad you might want. Laid out as one row it covers a strip
+       instead of a block. */
+    #wavePreview{top:110px;display:flex;align-items:center;gap:8px;
+      max-width:min(460px,62vw);padding:3px 10px}
+    #previewHdr{white-space:nowrap}
+    #previewRoster{margin-top:0;flex-wrap:nowrap}
+    #previewThreats{margin-top:0;flex-wrap:nowrap}
+    #previewBoss{margin-top:0;white-space:nowrap}
+    .pvUnit{width:26px;height:26px}
   }
 </style>
 
@@ -367,6 +412,7 @@
       <div id="upgradeName">TOWER</div>
       <div id="upgradeMeta">LEVEL 1</div>
       <div id="upgradeCards"></div>
+      <div id="specRow"></div>
       <div id="upgradeActions">
         <button class="iconBtn" id="upgradeSell" aria-label="Sell tower">
           <img src="assets/btn_sell.png" alt=""></button>
