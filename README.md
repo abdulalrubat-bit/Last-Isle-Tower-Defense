@@ -18,10 +18,11 @@ map.js         terrain: geometry, build pads, renderer
 enemies.js     drawn enemies — the fallback when a kind has no art
 props-data.js  GENERATED atlas manifest — tools/build-props.py writes it
 towers-data.js GENERATED atlas manifest — tools/build-towers.py writes it
+fx-data.js     GENERATED atlas manifest — tools/build-fx.py writes it
 game.js        the game, and the campaign
-assets/        45 files, 960KB — prop and tower atlases, enemy sheets, UI
+assets/        46 files, 976KB — prop, tower and fx atlases, enemy sheets, UI
 sw.js          offline cache — generated, run tools/stamp-sw.py
-tools/         props, towers, enemy sheets, sprites, balance sim, sw stamper
+tools/         props, towers, fx, enemy sheets, sprites, balance sim, stamper
 ```
 
 Open `index.html` over http, or from `file://` — the service worker is skipped
@@ -94,6 +95,20 @@ travelling sideways flew flat without it.
 Tier one is also written out as a standalone `tower_<type>.png`. That is what
 the HUD slot shows, and what the board falls back to if the atlas fails — a
 tower that does not draw at all is worse than a tower without tiers.
+
+Impacts come from the same pack:
+
+```sh
+python3 tools/build-fx.py ~/art/Tower_11/PNG
+```
+
+An eight-frame explosion for the arcane splash, which used to be an expanding
+circle, and a four-frame spark burst for every other hit — **tinted per tower
+type at load**, so a hit tells you which tower landed it. Tinting at draw time
+would be a composite pass per hit per frame; baked once, a hit is a
+`drawImage`. Frames in a sequence are different sizes because the effect
+expands, so they are padded to a common box rather than trimmed to one: trimmed
+individually, the burst drifts as it plays.
 
 ## Where the terrain comes from
 
@@ -321,9 +336,9 @@ Deliberate omissions, not oversights:
   which it currently does not.
 - **Water is still drawn, not painted.** The pack ships a `lake.png` per kit;
   the game draws an ellipse. It shows most in frost and ash.
-- **Nothing uses the impact animations.** The pack ships fire bursts, rock
-  shrapnel and smoke rings; a hit currently draws a circle and the arcane
-  splash draws an expanding ring.
-- **The pack has a second tower family** — catapults and ballistae, with
-  archer units that have their own bow animations. Nothing uses those either,
-  and they would suit a tower that fires a visible unit rather than a bolt.
+- **The pack has a second tower family** — catapults and ballistae, with archer
+  units that have their own bow animations. A tower that fires a visible unit
+  rather than a bolt would use them, and nothing does yet.
+- **Chain lightning is still drawn**, not painted: the arc between chained
+  targets is a stroked line. The pack has no art for it, so this one would
+  stay drawn even with everything else swapped.

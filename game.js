@@ -253,6 +253,38 @@ function loadSheet(file, count) {
 // which is a complete fallback rather than a broken board.
 // Tower tiers and projectiles. Same shape as the prop atlas: absent means
 // the game falls back, here to the standalone tier-one sprites.
+let FX_IMG = null;
+// Spark bursts, pre-tinted per tower type. Tinting at draw time would mean a
+// composite pass per hit per frame; baked once, a hit is a drawImage.
+const FX_SPARK = {};
+function loadFxAtlas() {
+  return new Promise(resolve => {
+    const im = new Image();
+    im.onload = () => {
+      if (im.naturalWidth && typeof FX_ATLAS !== 'undefined') {
+        FX_IMG = im;
+        const s = FX_ATLAS.spark;
+        if (s) {
+          for (const type of TOWER_ORDER) {
+            const cv = makeCanvas(s.r[2] * s.n, s.r[3]);
+            const c = cv.getContext('2d');
+            c.drawImage(im, s.r[0], s.r[1], s.r[2] * s.n, s.r[3],
+                        0, 0, s.r[2] * s.n, s.r[3]);
+            c.globalCompositeOperation = 'source-atop';
+            c.globalAlpha = 0.75;
+            c.fillStyle = TOWERS[type].colour;
+            c.fillRect(0, 0, cv.width, cv.height);
+            FX_SPARK[type] = cv;
+          }
+        }
+      }
+      resolve();
+    };
+    im.onerror = () => resolve();
+    im.src = 'assets/fx.png';
+  });
+}
+
 let TOWER_IMG = null;
 function loadTowerAtlas() {
   return new Promise(resolve => {
@@ -464,7 +496,7 @@ function splash(x, y, radius, dmg, source) {
     const d = Math.hypot(e.x - x, e.y - y);
     if (d <= radius) damage(e, dmg * (1 - 0.5 * d / radius));
   }
-  S.fx.push({ kind: 'ring', x, y, r: radius, ttl: 240, life: 240 });
+  S.fx.push({ kind: 'boom', x, y, r: radius, ttl: 420, life: 420 });
 }
 
 function chain(from, first, def, dmg) {
@@ -556,6 +588,11 @@ function update(dt) {
       if (def.slow) { e.slowUntil = S.time + def.slowFor; e.slowFactor = def.slow; }
       if (def.splash) splash(e.x, e.y, def.splash, s.dmg * 0.7, e);
       if (def.chain) chain(s.from, e, def, s.dmg);
+      if (!def.splash) {
+        // Splash draws its own explosion; a spark on top of it is noise.
+        S.fx.push({ kind: 'spark', x: e.x, y: e.y - KINDS[e.kind].size * 0.35,
+                    type: s.type, ttl: 240, life: 240 });
+      }
       sfx('hit');
       s.dead = true;
     } else {
@@ -782,17 +819,37 @@ function drawShots() {
   }
 }
 
+// `sheet` may be the atlas itself or a pre-tinted canvas; the rectangle is
+// the same either way.
+function blitFx(sheet, spec, x, y, progress, scale) {
+  const [sx, sy, fw, fh] = spec.r;
+  const i = Math.min(spec.n - 1, Math.floor(progress * spec.n));
+  const w = fw * scale, h = fh * scale;
+  const ox = sheet === FX_IMG ? sx : 0;
+  const oy = sheet === FX_IMG ? sy : 0;
+  ctx.drawImage(sheet, ox + i * fw, oy, fw, fh, x - w / 2, y - h / 2, w, h);
+}
+
 function drawFx() {
   for (const f of S.fx) {
     const k = f.ttl / f.life;
     ctx.save();
-    if (f.kind === 'ring') {
-      ctx.globalAlpha = k;
-      ctx.strokeStyle = '#b86cff';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.arc(f.x, f.y, f.r * (1.15 - k * 0.55), 0, Math.PI * 2);
-      ctx.stroke();
+    if (f.kind === 'boom') {
+      const spec = FX_IMG && typeof FX_ATLAS !== 'undefined' && FX_ATLAS.boom;
+      if (spec) {
+        blitFx(FX_IMG, spec, f.x, f.y, 1 - k, (f.r * 2.3) / spec.r[2]);
+      } else {
+        ctx.globalAlpha = k;
+        ctx.strokeStyle = '#f0563c';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, f.r * (1.15 - k * 0.55), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    } else if (f.kind === 'spark') {
+      const spec = FX_IMG && typeof FX_ATLAS !== 'undefined' && FX_ATLAS.spark;
+      const sheet = FX_SPARK[f.type];
+      if (spec && sheet) blitFx(sheet, spec, f.x, f.y, 1 - k, 0.62);
     } else {
       ctx.globalAlpha = k;
       ctx.strokeStyle = '#ffe34d';
@@ -1207,7 +1264,7 @@ function frame(now) {
 
 resize();
 Promise.all([loadAssets(), loadEnemyArt(), loadPropAtlas(),
-              loadTowerAtlas()]).then(() => {
+              loadTowerAtlas(), loadFxAtlas()]).then(() => {
   bakeEnemyFrames();
   bootSay.textContent = 'ready';
   el('btnMusic').querySelector('img').src =
