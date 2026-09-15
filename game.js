@@ -195,7 +195,8 @@ const SPEC_COLOUR = {
 };
 
 function specUnlocked(t) {
-  return TRACK_ORDER.some(k => t.up[k] >= MAX_TRACK);
+  const need = owns('training') ? MAX_TRACK - 1 : MAX_TRACK;
+  return TRACK_ORDER.some(k => t.up[k] >= need);
 }
 function specOf(t) {
   return t.spec ? SPECS[t.type].find(x => x.id === t.spec) : null;
@@ -318,6 +319,13 @@ const BOSS_NAME = { shield:'SHIELDED', jam:'JAMS TOWERS', summon:'SUMMONS' };
 // summoners are in it. See updateBoss for why this is not per boss.
 const SUMMON_BUDGET = 10;
 
+// How much SURVEYOR tightens pad spacing. -20 was the first guess and it found
+// two extra pads on some maps and NONE on deepwood, whose road happens to sit
+// just the wrong side of the threshold — an unlock that does nothing on one of
+// six levels is worse than no unlock. -40 gains between two and five on every
+// map in the campaign.
+const PAD_SURVEY = -40;
+
 // Waves are written in ROLES, and each level maps roles to kinds. One curve,
 // ten kinds, and a level fielding wisps and wardens is a different problem to
 // one fielding goblins and ogres — without rewriting the curve.
@@ -416,7 +424,21 @@ const WAGERS = {
 };
 const WAGER_ORDER = ['swift', 'hardened', 'horde'];
 
-function wagerOf() { return S.wager ? WAGERS[S.wager] : null; }
+// Wagers multiply together rather than being picked one at a time, because
+// DOUBLE OR NOTHING lets two run at once: two risks stacked, two payouts
+// multiplied. One slot without it, two with.
+function wagerSlots() { return owns('gambler') ? 2 : 1; }
+function wagerStack(list) {
+  const out = { pay:1, speed:1, tough:1, count:1 };
+  for (const id of list || []) {
+    const w = WAGERS[id];
+    out.pay *= w.pay;
+    if (w.speed) out.speed *= w.speed;
+    if (w.tough) out.tough *= w.tough;
+    if (w.count) out.count *= w.count;
+  }
+  return out;
+}
 
 const DEFAULT_ROSTER =
   { fodder:'goblin', fast:'scorpion', heavy:'ogre', boss:'demon' };
@@ -457,7 +479,7 @@ const S = {
   phase: 'ready',        // ready | spawning | clearing | done
   restLeft: 0,
   maxLives: 0, bossCalled: false,
-  wager: null, wagerLive: null, summonBudget: 0,
+  wager: [], wagerLive: [], summonBudget: 0,
   shakeUntil: 0, shakeMag: 0, leakUntil: 0,
   queue: [],             // enemy kinds still to spawn this wave
   spawnIn: 0,
@@ -468,11 +490,39 @@ const S = {
   dirty: true,
 };
 
+// ------------------------------------------------------------- workshop ---
+//
+// What gems are for. They accumulated for months and bought nothing, which is
+// the exact thing the brief warns against — a number that goes up is not
+// progression.
+//
+// Every one of these opens a way to PLAY rather than raising a number. The
+// closest to a stat is QUARTERMASTER, and even that is chosen so it buys a
+// fourth tower in the opening rather than a slightly better third one: the
+// interesting part is the shape of the opening, not the energy.
+//
+// Bought once, kept forever, and applied to every level including ones already
+// cleared — so a player who stalls on hard has something to do other than
+// retry the same run.
+const UNLOCKS = {
+  quartermaster: { name:'QUARTERMASTER', cost:30,
+    blurb:'Start every level with 90 more energy — enough for a fourth tower\nin the opening instead of a third.' },
+  training:      { name:'FIELD TRAINING', cost:45,
+    blurb:'Towers open their specialisation at two levels in a track instead\nof three, so a fork arrives early enough to shape the run.' },
+  surveyor:      { name:'SURVEYOR', cost:60,
+    blurb:'Every map is surveyed for more ground: build pads sit closer\ntogether, so there are more of them.' },
+  gambler:       { name:'DOUBLE OR NOTHING', cost:80,
+    blurb:'Take two wagers on the same wave. The risks stack and so does\nthe payout.' },
+};
+const UNLOCK_ORDER = ['quartermaster', 'training', 'surveyor', 'gambler'];
+
+function owns(id) { return !!(save.unlocks && save.unlocks[id]); }
+
 const SAVE_KEY = 'islanddefence.v2';
 const save = Object.assign(
   // stars: { levelId: 0-3 }. A level is unlocked once the one before it has
   // any stars at all, so a player who scrapes a win is never stuck.
-  { gems: 0, stars: {}, music: true, sound: true },
+  { gems: 0, stars: {}, unlocks: {}, music: true, sound: true },
   (() => { try { return JSON.parse(localStorage.getItem(SAVE_KEY)) || {}; }
            catch (_) { return {}; } })()
 );
@@ -743,7 +793,7 @@ function buildQueue(spec) {
   // HORDE swells the ordinary ranks only. Bosses are not multiplied: three
   // demons on wave ten is not a harder version of the same wave, it is a
   // different and much worse one.
-  const mult = (S.wagerLive && WAGERS[S.wagerLive].count) || 1;
+  const mult = wagerStack(S.wagerLive).count;
   const pools = Object.entries(spec)
     .filter(([role]) => hasRole(role))
     .flatMap(([role, n]) => Array(role === 'boss' ? n : Math.round(n * mult))
@@ -849,24 +899,32 @@ function renderWagers() {
   if (!on) { bar.innerHTML = ''; return; }
   // Rebuilt only when the selection changes, so tapping is not fighting a DOM
   // that is replaced underneath it every time energy ticks.
-  if (bar.dataset.sel === String(S.wager) && bar.children.length) return;
-  bar.dataset.sel = String(S.wager);
+  const key = S.wager.join(',');
+  if (bar.dataset.sel === key && bar.children.length) return;
+  bar.dataset.sel = key;
   bar.innerHTML = '';
+  const slots = wagerSlots();
   const hint = document.createElement('span');
   hint.id = 'wagerHint';
-  hint.textContent = 'RISK?';
+  hint.textContent = slots > 1 ? `RISK? ${S.wager.length}/${slots}` : 'RISK?';
   bar.appendChild(hint);
   for (const id of WAGER_ORDER) {
     const w = WAGERS[id];
+    const held = S.wager.includes(id);
     const b = document.createElement('button');
-    b.className = 'wager' + (S.wager === id ? ' on' : '');
+    b.className = 'wager' + (held ? ' on' : '');
+    // Greyed rather than hidden once the slots are full: the player should see
+    // what they did not take.
+    if (!held && S.wager.length >= slots) b.classList.add('full');
     b.innerHTML = `<span class="n">${w.name}</span>` +
                   `<span class="r">${w.risk}</span>` +
                   `<span class="p">+${Math.round((w.pay - 1) * 100)}% ENERGY</span>`;
     b.addEventListener('click', () => {
-      S.wager = S.wager === id ? null : id;
+      if (held) S.wager = S.wager.filter(x => x !== id);
+      else if (S.wager.length < slots) S.wager = S.wager.concat(id);
+      else return;
       S.dirty = true;
-      sfx(S.wager ? 'build' : 'sell');
+      sfx(held ? 'sell' : 'build');
       renderWagers();
     });
     bar.appendChild(b);
@@ -947,12 +1005,12 @@ function startWave(manual) {
   // what the wave is actually running under — otherwise clearing the choice
   // for the next wave would retroactively change the one in flight.
   S.wagerLive = S.wager;
-  S.wager = null;
+  S.wager = [];
   S.summonBudget = SUMMON_BUDGET;
-  if (S.wagerLive) {
-    const w = WAGERS[S.wagerLive];
-    banner(w.name, w.risk + '  \u2192  +' + Math.round((w.pay - 1) * 100) + '% ENERGY',
-           true, 1400);
+  if (S.wagerLive.length) {
+    const st = wagerStack(S.wagerLive);
+    banner(S.wagerLive.map(id => WAGERS[id].name).join(' + '),
+           '+' + Math.round((st.pay - 1) * 100) + '% ENERGY', true, 1400);
   }
   S.queue = buildQueue(waveSpec(S.wave));
   S.phase = 'spawning';
@@ -994,29 +1052,28 @@ function spawn(kind, atDist) {
     shake(11, 260);
     sfx('boss');
   }
-  const w = S.wagerLive ? WAGERS[S.wagerLive] : null;
+  const w = wagerStack(S.wagerLive);
   const hp = (66 + S.wave * 30) * k.hp * d.hp * LEVELS[S.level].hp;
   S.enemies.push({
     kind, dist: atDist || 0, hp, maxHp: hp,
     // HARDENED is a damage-taken multiplier rather than extra health, so the
     // health bar still reads as the fraction of the enemy that is left.
-    tough: w && w.tough ? w.tough : 1,
-    speed: BASE_SPEED * k.speed * d.speed * (w && w.speed ? w.speed : 1),
+    tough: w.tough,
+    speed: BASE_SPEED * k.speed * d.speed * w.speed,
     slowUntil: 0, slowFactor: 1, hurtUntil: 0, wasSplit: false,
     burnUntil: 0, burnDps: 0, shatterUntil: 0, shatterMul: 1,
     auraUntil: 0, auraMul: 1,
     bossNext: 0, shieldHp: 0, shieldMax: 0, shieldDownUntil: 0, jamTarget: null,
     summoned: 0,
-    reward: Math.round((7 + S.wave * 1.6) * k.reward * (w ? w.pay : 1)),
+    reward: Math.round((7 + S.wave * 1.6) * k.reward * w.pay),
     anim: Math.random() * 1000,
     x: 0, y: 0, angle: 0,
   });
 }
 
 function waveCleared() {
-  const w = S.wagerLive ? WAGERS[S.wagerLive] : null;
-  const bonus = Math.round((40 + S.wave * 12) * (w ? w.pay : 1));
-  S.wagerLive = null;
+  const bonus = Math.round((40 + S.wave * 12) * wagerStack(S.wagerLive).pay);
+  S.wagerLive = [];
   S.energy += bonus;
   save.gems += 1;
   persist();
@@ -2049,14 +2106,19 @@ function newRun(levelIndex, diff) {
   S.diff = diff;
   // Build the geometry, then composite the map once. Everything after this
   // reads S.map for the path and pads and blits S.baked for the picture.
-  S.map = buildLevel(LEVELS[levelIndex], MAP_W, MAP_H);
+  // SURVEYOR tightens the pad spacing rather than adding pads by hand, so the
+  // extra ones land where the geometry already wanted one and never in the
+  // water or across the road. See derivePads: the adjustment has to move the
+  // along-road step as well as the between-pad gap, or it finds nothing.
+  S.map = buildLevel(LEVELS[levelIndex], MAP_W, MAP_H,
+                     owns('surveyor') ? PAD_SURVEY : 0);
   S.baked = renderLevel(S.map, makeCanvas);
   const d = DIFF[diff];
-  S.energy = d.energy;
+  S.energy = d.energy + (owns('quartermaster') ? 90 : 0);
   S.lives = d.lives;
   S.maxLives = d.lives;
   S.shakeUntil = 0; S.shakeMag = 0; S.leakUntil = 0;
-  S.wager = null; S.wagerLive = null;
+  S.wager = []; S.wagerLive = [];
   S.score = 0;
   S.wave = 0;
   S.phase = 'ready';
@@ -2161,6 +2223,41 @@ function openLevels() {
   pushBack();
 }
 
+function openShop() {
+  renderShop();
+  show('shopOverlay', true);
+  pushBack();
+}
+
+function renderShop() {
+  el('shopGems').textContent = `${save.gems} GEM${save.gems === 1 ? '' : 'S'}`;
+  const list = el('shopList');
+  list.innerHTML = '';
+  for (const id of UNLOCK_ORDER) {
+    const u = UNLOCKS[id];
+    const had = owns(id);
+    const afford = save.gems >= u.cost;
+    const row = document.createElement('button');
+    row.className = 'shopRow' + (had ? ' owned' : afford ? '' : ' poor');
+    row.disabled = had || !afford;
+    row.innerHTML =
+      `<span class="txt"><span class="n">${u.name}</span>` +
+      `<span class="d">${u.blurb}</span></span>` +
+      `<span class="buy">${had ? 'OWNED' : u.cost + ' \u25c6'}</span>`;
+    row.addEventListener('click', () => {
+      if (owns(id) || save.gems < u.cost) return;
+      save.gems -= u.cost;
+      save.unlocks[id] = true;
+      persist();
+      sfx('win');
+      toast(`${u.name} UNLOCKED`);
+      renderShop();
+      syncMenu();
+    });
+    list.appendChild(row);
+  }
+}
+
 function toMenu() {
   S.screen = 'menu';
   S.running = false;
@@ -2169,6 +2266,7 @@ function toMenu() {
   show('upgradeOverlay', false);
   show('diffOverlay', false);
   show('levelOverlay', false);
+  show('shopOverlay', false);
   show('menu', true);
   syncMenu();
 }
@@ -2259,6 +2357,8 @@ el('upgradeSell').addEventListener('click', () => {
 });
 
 el('menuPlay').addEventListener('click', () => { audio(); openLevels(); });
+el('menuShop').addEventListener('click', () => { audio(); openShop(); });
+el('shopClose').addEventListener('click', () => show('shopOverlay', false));
 el('levelClose').addEventListener('click', () => show('levelOverlay', false));
 for (const b of document.querySelectorAll('.diffBtn')) {
   b.addEventListener('click', () => newRun(S.level, b.dataset.diff));
@@ -2295,6 +2395,7 @@ function pushBack() {
 }
 function closeTopmost() {
   if (el('upgradeOverlay').classList.contains('show')) { closeUpgrade(); return true; }
+  if (el('shopOverlay').classList.contains('show')) { show('shopOverlay', false); return true; }
   if (el('diffOverlay').classList.contains('show')) {
     show('diffOverlay', false); return true;
   }

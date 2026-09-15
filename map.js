@@ -184,12 +184,18 @@ const PAD_OUT = 84;         // pad centre offset from the road centreline
 // passing enemy, which made the previous map unwinnable on hard for reasons
 // that had nothing to do with difficulty.
 
-function derivePads(path, water, W, H, minGap) {
+// `step` is how far along the road the walk must travel before it will
+// consider another pad, and `minGap` how far a new pad must be from every pad
+// already placed. BOTH have to move together to change pad density: the
+// SURVEYOR unlock first lowered only minGap and found exactly zero extra pads
+// on every map, because the along-road step was the binding constraint and
+// minGap was never the thing saying no.
+function derivePads(path, water, W, H, minGap, step) {
   const pads = [];
   let acc = 1e9, side = 1;
   for (let i = 3; i < path.length - 3; i++) {
     acc += Math.hypot(path[i][0]-path[i-1][0], path[i][1]-path[i-1][1]);
-    if (acc < 168) continue;
+    if (acc < (step || 168)) continue;
     const [ax, ay] = path[i-3], [bx, by] = path[i+3];
     const len = Math.hypot(bx-ax, by-ay) || 1;
     const nx = -(by-ay)/len, ny = (bx-ax)/len;
@@ -208,11 +214,17 @@ function derivePads(path, water, W, H, minGap) {
   return pads;
 }
 
-function buildLevel(spec, W, H) {
+function buildLevel(spec, W, H, padAdjust) {
   const pal = paletteFor(spec.palette);
   const path = sampleSpline(spec.control, 12);
   const water = spec.water || [];
-  const pads = derivePads(path, water, W, H, spec.padGap || 152);
+  // padGap is a difficulty dial — closer pads mean more towers covering the
+  // same road — so the SURVEYOR unlock adjusts it rather than appending pads,
+  // and the floor stops any unlock from stacking them on top of each other.
+  const adj = padAdjust || 0;
+  const pads = derivePads(path, water, W, H,
+                          Math.max(118, (spec.padGap || 152) + adj),
+                          Math.max(132, 168 + adj));
   const rand = rng(spec.seed);
 
   const clearOfRoad = (x, y, d) => !path.some(p => Math.hypot(p[0]-x, p[1]-y) < d);
