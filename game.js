@@ -37,7 +37,7 @@ const LEVELS = [
 
   { id:'palmrun', name:'THE LONG MEADOW', palette:'jungle', hp:0.96, seed:5514,
     props:320, decor:640, padGap:170,
-    roster:{ fodder:'goblin', fast:'wisp', heavy:'feline', boss:'demon' },
+    roster:{ fodder:'goblin', fast:'wisp', heavy:'feline', boss:'warlord' },
     curve:'rush',
     control:[[-40,240],[210,220],[390,330],[430,540],[620,660],[830,600],
              [890,420],[1060,300],[1270,330],[1400,520],[1580,620]],
@@ -45,7 +45,7 @@ const LEVELS = [
 
   { id:'deepwood', name:'DUST ROAD', palette:'dunes', hp:0.76, seed:7712,
     props:340, decor:640, padGap:180,
-    roster:{ fodder:'raider', fast:'scorpion', heavy:'sentinel', boss:'demon' },
+    roster:{ fodder:'raider', fast:'scorpion', heavy:'sentinel', boss:'matriarch' },
     curve:'siege',
     control:[[-40,180],[220,200],[400,320],[420,520],[600,640],[820,600],
              [900,430],[1080,330],[1290,380],[1420,560],[1580,660]],
@@ -53,7 +53,7 @@ const LEVELS = [
 
   { id:'millpond', name:'MILLPOND', palette:'marsh', hp:1.12, seed:41009,
     props:300, decor:600, padGap:186,
-    roster:{ fodder:'wisp', fast:'scorpion', heavy:'warden', boss:'demon' },
+    roster:{ fodder:'wisp', fast:'scorpion', heavy:'warden', boss:'warlord' },
     curve:'swarm',
     control:[[-40,620],[220,640],[420,560],[500,380],[700,300],[900,380],
              [1000,560],[1180,640],[1360,560],[1460,380],[1580,300]],
@@ -61,7 +61,7 @@ const LEVELS = [
 
   { id:'frostgate', name:'FROSTGATE', palette:'snow', hp:0.70, seed:33144,
     props:260, decor:520, padGap:190,
-    roster:{ fodder:'goblin', fast:'raider', heavy:'warden', boss:'demon' },
+    roster:{ fodder:'goblin', fast:'raider', heavy:'warden', boss:'matriarch' },
     curve:'siege',
     control:[[-40,430],[200,440],[340,300],[540,250],[700,360],[760,570],
              [950,660],[1150,590],[1240,400],[1420,330],[1580,380]],
@@ -251,8 +251,38 @@ const KINDS = {
   warden:   { hp:2.60, speed:0.62, size:92,  reward:2.2, armour:0.62, slowImmune:true },
   ogre:     { hp:2.30, speed:0.68, size:112, reward:2.4, armour:1,
               split:{ into:'goblin', n:2 } },
-  demon:    { hp:16.0, speed:0.55, size:158, reward:9.0, armour:0.85 },
+  demon:    { hp:16.0, speed:0.55, size:158, reward:9.0, armour:0.85,
+              boss:{ mech:'shield', pool:0.20, up:2600, gap:5200 } },
+  warlord:  { hp:13.0, speed:0.70, size:150, reward:8.5, armour:0.78,
+              boss:{ mech:'jam', range:240, jamFor:2600, gap:3600 } },
+  matriarch:{ hp:14.5, speed:0.52, size:158, reward:9.0, armour:1,
+              boss:{ mech:'summon', n:2, gap:5000, cap:10 } },
 };
+
+// ---------------------------------------------------------------- bosses ---
+//
+// A boss used to be one kind with sixteen times the hit points, which the
+// next-wave panel then announced three waves in advance — a lot of ceremony
+// for an enemy that asked nothing the wave before it had not already asked.
+//
+// Each of the three now brings a mechanic instead, and each mechanic has a
+// different answer, so which boss a level fields changes how the level ends:
+//
+//   SHIELD   a pool of absorbing shield goes up, holds, drops, comes back.
+//            Damage lands on the pool first. Chipping at it forever never
+//            breaks it before it refreshes; something has to burst the pool
+//            down so the seconds after it collapses are spent on the boss.
+//   JAM      silences the nearest tower it passes, then the next one. A
+//            single strong killbox is exactly the shape this beats; towers
+//            spread along the road keep firing while one is out.
+//   SUMMON   drops fodder behind itself as it walks, so every second it
+//            survives is more to clear. Answered by killing it, or by having
+//            something that clears crowds while the rest works on it.
+//
+// The art is reused: warlord is the sentinel's sheet and matriarch is the
+// ogre's, both at boss scale. They read as distinct at size and want their
+// own sprites eventually.
+const BOSS_NAME = { shield:'SHIELDED', jam:'JAMS TOWERS', summon:'SUMMONS' };
 
 // Waves are written in ROLES, and each level maps roles to kinds. One curve,
 // ten kinds, and a level fielding wisps and wardens is a different problem to
@@ -311,6 +341,7 @@ const KIND_NAME = {
   goblin:'GOBLIN HORDE', scorpion:'SCORPION', wisp:'WISP', raider:'RAIDER',
   feline:'PROWLER', wizard:'WARLOCK', sentinel:'SENTINEL', warden:'WARDEN',
   ogre:'OGRE', demon:'DEMON LORD',
+  warlord:'THE WARLORD', matriarch:'THE MATRIARCH',
 };
 
 const DEFAULT_ROSTER =
@@ -403,6 +434,9 @@ const ENEMY_ART = {
   warden:   { walk:'enemy_warden_walk.png', die:'enemy_warden_die.png', walkN:8, dieN:6 },
   ogre:     { walk:'enemy_ogre_walk.png', die:'enemy_ogre_die.png', walkN:8, dieN:6 },
   demon:    { walk:'enemy_demon_walk.png', die:'enemy_demon_die.png', walkN:8, dieN:6 },
+  // Reused sheets at boss scale — see BOSS_NAME above.
+  warlord:  { walk:'enemy_sentinel_walk.png', die:'enemy_sentinel_die.png', walkN:8, dieN:6 },
+  matriarch:{ walk:'enemy_ogre_walk.png', die:'enemy_ogre_die.png', walkN:8, dieN:6 },
 };const DIE_MS = 700;
 
 const bootBar = document.getElementById('bootBar');
@@ -662,6 +696,13 @@ function enemyPortrait(kind, box) {
 // and only if the mechanic is actually in the wave.
 const THREATS = [
   { tag:'BOSS',     boss:true, test: () => false },
+  // A boss's mechanic is the thing worth building for, so it is named as its
+  // own warning rather than hidden inside the word BOSS. Derived like the
+  // rest: the tag comes from the boss kind's own mechanic, so a level that
+  // fields a different boss warns differently with nothing else to change.
+  { tag:'SHIELDED',    test: k => k.boss && k.boss.mech === 'shield' },
+  { tag:'JAMS TOWERS', test: k => k.boss && k.boss.mech === 'jam' },
+  { tag:'SUMMONS',     test: k => k.boss && k.boss.mech === 'summon' },
   { tag:'ARMOUR',   test: k => k.armour < 1 },
   { tag:'AIR',      test: k => k.flying },
   { tag:'NO SLOW',  test: k => k.slowImmune },
@@ -806,7 +847,8 @@ function spawn(kind, atDist) {
   if (!S.bossCalled && atDist == null && waveSpec(S.wave).boss
       && kind === roleKind('boss')) {
     S.bossCalled = true;
-    banner('BOSS', KIND_NAME[kind] || '', true, 1800);
+    const mech = (k.boss && BOSS_NAME[k.boss.mech]) || '';
+    banner(KIND_NAME[kind] || 'BOSS', mech, true, 1900);
     shake(11, 260);
     sfx('boss');
   }
@@ -816,6 +858,8 @@ function spawn(kind, atDist) {
     speed: BASE_SPEED * k.speed * d.speed,
     slowUntil: 0, slowFactor: 1, hurtUntil: 0, wasSplit: false,
     burnUntil: 0, burnDps: 0, shatterUntil: 0, shatterMul: 1,
+    bossNext: 0, shieldHp: 0, shieldMax: 0, shieldDownUntil: 0, jamTarget: null,
+    summoned: 0,
     reward: Math.round((7 + S.wave * 1.6) * k.reward),
     anim: Math.random() * 1000,
     x: 0, y: 0, angle: 0,
@@ -854,6 +898,66 @@ function finish(won) {
   showResult(won, stars);
 }
 
+// Runs once a frame for anything carrying a boss block, AFTER its position is
+// known — jam needs to know which tower it is beside, and summon needs a point
+// on the road to drop children at.
+function updateBoss(e, b) {
+  if (b.mech === 'shield') {
+    // Raise, hold, drop, wait, raise. Bursting the pool down early ends the
+    // hold early, which is the whole decision: the reward for real damage is
+    // seconds of an exposed boss.
+    if (e.shieldHp > 0) {
+      if (S.time >= e.bossNext) { e.shieldHp = 0; e.shieldDownUntil = S.time + b.gap; }
+    } else if (S.time >= e.shieldDownUntil) {
+      e.shieldMax = e.maxHp * b.pool;
+      e.shieldHp = e.shieldMax;
+      e.bossNext = S.time + b.up;
+    }
+    return;
+  }
+  if (S.time < e.bossNext) return;
+  e.bossNext = S.time + b.gap;
+
+  if (b.mech === 'jam') {
+    // The nearest tower still able to fire. Picking the nearest rather than
+    // the strongest is what makes spreading towers out the answer: a boss can
+    // only silence what it is walking past.
+    let best = b.range, pick = null;
+    for (const t of S.towers) {
+      if (t.jammedUntil > S.time) continue;
+      const d = Math.hypot(t.x - e.x, t.y - e.y);
+      if (d < best) { best = d; pick = t; }
+    }
+    if (pick) {
+      pick.jammedUntil = S.time + b.jamFor;
+      e.jamTarget = pick;
+      S.fx.push({ kind:'jam', x1:e.x, y1:e.y - KINDS[e.kind].size * 0.45,
+                  x2:pick.x, y2:pick.y - 30, ttl:360, life:360 });
+      sfx('leak');
+    }
+    return;
+  }
+
+  if (b.mech === 'summon') {
+    // Capped over the boss's whole life, not just paced. Uncapped it summons
+    // for as long as it survives, and a slow boss survives a long time: the
+    // first version put out sixty extra enemies across one crossing and made
+    // both levels it was on unwinnable on EASY, dying at the wave it first
+    // appeared. A rate limit alone cannot bound that; a total can.
+    if (e.summoned >= b.cap) return;
+    // Behind itself, so the children have to walk the whole board the boss
+    // already covered rather than appearing at the end of the road.
+    const kind = roleKind('fodder');
+    for (let i = 0; i < b.n; i++) {
+      e.summoned++;
+      spawn(kind, Math.max(0, e.dist - 40 - i * 34));
+      S.enemies[S.enemies.length - 1].wasSplit = true;
+    }
+    S.fx.push({ kind:'boom', x:e.x, y:e.y - KINDS[e.kind].size * 0.35,
+                r:70, ttl:320, life:320 });
+  }
+}
+
 /* ------------------------------------------------------------- combat ---- */
 
 function damage(e, amount, ignoreArmour) {
@@ -862,7 +966,26 @@ function damage(e, amount, ignoreArmour) {
   // held on the tower, so every other tower's hits are amplified without any
   // of them needing to know an ice tower exists.
   if (e.shatterUntil && S.time < e.shatterUntil) amount *= e.shatterMul;
-  e.hp -= ignoreArmour ? amount : amount * (KINDS[e.kind].armour ?? 1);
+  let dealt = ignoreArmour ? amount : amount * (KINDS[e.kind].armour ?? 1);
+  // A raised shield eats damage until its pool is gone, and armour does not
+  // apply to it — the shield is the obstacle, not the hide behind it. Burst
+  // it down and the boss is exposed for the rest of the phase; chip at it and
+  // it refreshes before you ever get through.
+  if (e.shieldHp > 0) {
+    const taken = Math.min(e.shieldHp, dealt);
+    e.shieldHp -= taken;
+    dealt -= taken;
+    e.hurtUntil = S.time + HURT_MS;
+    if (e.shieldHp <= 0) {
+      const b = KINDS[e.kind].boss;
+      e.shieldDownUntil = S.time + (b ? b.gap : 4000);
+      S.fx.push({ kind:'boom', x:e.x, y:e.y - KINDS[e.kind].size * 0.4,
+                  r:90, ttl:380, life:380 });
+      shake(7, 180);
+    }
+    if (dealt <= 0) return;
+  }
+  e.hp -= dealt;
   e.hurtUntil = S.time + HURT_MS;
   if (e.hp <= 0) {
     S.energy += e.reward;
@@ -973,6 +1096,7 @@ function update(dt) {
     }
     const p = enemyPos(e);
     e.x = p.x; e.y = p.y; e.angle = p.angle;
+    if (ek.boss) updateBoss(e, ek.boss);
     if (e.dist >= routeLen(e.kind)) {
       e.hp = 0;
       e.leaked = true;
@@ -990,6 +1114,7 @@ function update(dt) {
 
   for (const t of S.towers) {
     t.cool = Math.max(0, t.cool - dt);
+    if (t.jammedUntil > S.time) continue;
     const range = towerRange(t);
     let target = null, furthest = -1;
     for (const e of S.enemies) {
@@ -1219,6 +1344,24 @@ function drawTowers() {
       ctx.drawImage(im, t.x - w / 2, t.y + 10 - h, w, h);
     }
 
+    // A silenced tower must not look like a working one, or the player reads
+    // it as their own build failing rather than as the boss doing something.
+    if (t.jammedUntil > S.time) {
+      ctx.save();
+      ctx.globalAlpha = 0.45 + 0.25 * Math.sin(S.time / 90);
+      ctx.strokeStyle = '#c83bd8';
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y - 26, 46, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 9;
+      ctx.beginPath();
+      ctx.moveTo(t.x - 30, t.y - 56);
+      ctx.lineTo(t.x + 30, t.y + 4);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     const lvl = towerLevel(t);
     if (lvl > 1) {
       ctx.fillStyle = 'rgba(20,12,6,.82)';
@@ -1296,6 +1439,29 @@ function drawEnemies() {
     }
     ctx.restore();
 
+    // A raised shield has to be unmistakable: it is the reason damage is not
+    // landing, and a player who cannot see it just thinks their towers broke.
+    if (e.shieldHp > 0) {
+      const frac = e.shieldHp / (e.shieldMax || 1);
+      const r = k.size * 0.62;
+      const cy = e.y + k.size * 0.20 - k.size * 0.5;
+      ctx.save();
+      ctx.globalAlpha = 0.20 + 0.22 * frac;
+      ctx.fillStyle = '#6fd6ff';
+      ctx.beginPath();
+      ctx.arc(e.x, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 0.55 + 0.45 * frac;
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = '#bfefff';
+      ctx.beginPath();
+      // Drawn as an arc that shrinks with the pool, so the shield visibly
+      // takes damage rather than vanishing all at once.
+      ctx.arc(e.x, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     const w = Math.max(34, k.size * 0.52);
     const top = e.y + k.size * 0.20 - k.size - 10;
     ctx.fillStyle = '#24150d';
@@ -1369,11 +1535,15 @@ function drawFx() {
       const sheet = FX_SPARK[f.type];
       if (spec && sheet) blitFx(sheet, spec, f.x, f.y, 1 - k, 0.62);
     } else {
+      // 'arc' is lightning chaining between enemies; 'jam' is a boss reaching
+      // out to silence a tower. Same shape, opposite meaning, so they are not
+      // allowed to be the same colour.
+      const jam = f.kind === 'jam';
       ctx.globalAlpha = k;
-      ctx.strokeStyle = '#ffe34d';
-      ctx.shadowColor = '#ffe34d';
-      ctx.shadowBlur = 12;
-      ctx.lineWidth = 4;
+      ctx.strokeStyle = jam ? '#c83bd8' : '#ffe34d';
+      ctx.shadowColor = jam ? '#c83bd8' : '#ffe34d';
+      ctx.shadowBlur = jam ? 18 : 12;
+      ctx.lineWidth = jam ? 6 : 4;
       ctx.beginPath();
       ctx.moveTo(f.x1, f.y1);
       ctx.lineTo(f.x2, f.y2);
@@ -1786,7 +1956,7 @@ function tapBoard(clientX, clientY) {
   S.energy -= def.cost;
   S.towers.push({
     x: pads[pick][0], y: pads[pick][1], pad: pick, type: S.selectedType,
-    up: { dmg: 0, range: 0, rate: 0 }, spec: null,
+    up: { dmg: 0, range: 0, rate: 0 }, spec: null, jammedUntil: 0,
     spent: def.cost, cool: 260, angle: 0,
   });
   S.dirty = true;
