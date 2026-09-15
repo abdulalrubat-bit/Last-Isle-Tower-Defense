@@ -145,6 +145,61 @@ on the ground under it. Text does not work there: the map draws at about a
 fifth of size on a phone, so a thirteen-pixel badge becomes four and its
 letters become nothing.
 
+## Permanent progression
+
+Gems — one a wave, five a level — buy four permanent unlocks from the workshop
+on the menu. Kept forever and applied to every level including ones already
+cleared, so a player stuck on hard has something to do other than retry.
+
+| unlock | gems | opens |
+|---|---|---|
+| **QUARTERMASTER** | 30 | +90 starting energy — a *fourth* tower in the opening, not a better third |
+| **FIELD TRAINING** | 45 | specialisations at two levels in a track instead of three |
+| **SURVEYOR** | 60 | tighter pad spacing on every map (2–5 more pads) |
+| **DOUBLE OR NOTHING** | 80 | two wagers on one wave, risks and payouts multiplied |
+
+215 gems for all four against roughly 120 for a campaign — the second run is
+the point. None of them raises a number for its own sake; the closest is
+QUARTERMASTER, chosen so it changes the *shape* of the opening.
+
+**SURVEYOR took three tries to do anything at all.** `derivePads` has two
+independent constraints: `minGap` (how far a new pad must be from existing
+ones) and a step along the road deciding how often a pad is even considered.
+Lowering only `minGap` found zero extra pads on every map, because the step was
+the thing saying no. With both moving, −20 still found none on `deepwood`,
+whose road sits just the wrong side of the threshold. −40 gains two to five on
+every map. An unlock that does nothing on one of seven levels is worse than no
+unlock.
+
+Unlocks are off by default and the simulation buys none, so the balance table
+measures the game without them.
+
+## Map mechanics
+
+A level may declare a **second road** in `control2`. Enemies alternate between
+roads strictly rather than randomly, so a two-entrance map always presents both
+and never rolls a wave down one of them by chance. A level may also **ban
+tower types** — the cheapest mechanic here and the one with most effect on a
+build, since no amount of energy buys around a missing splash tower.
+
+`THE CROSSROADS` uses both. Routes live behind `pathPointAt`: `routes` is the
+array everything reads, and `path` / `seg` / `length` remain aliases to the
+first, so every single-road level is untouched. Pads come off every road and
+must clear all of them; splitters and summoners put children on the parent's
+road.
+
+Three things to know before adding another:
+
+- **The sim's bot places towers directly**, not through the tap handler, so it
+  will build a banned tower unless told not to. It is told not to now.
+- **Check road-against-ground contrast before picking a palette.** `forge` has
+  six points of luminance between its road and its dirt, which on a map about
+  covering two roads made both nearly invisible. `ash` is fifty, about where
+  jungle sits.
+- **A two-road level is violently sensitive to `hp`.** 0.58 gave 21 of 27 wins
+  on hard where the campaign runs 1 to 4 of 9; correcting to 1.25 walled it on
+  *easy* at 2 of 27. It sits at 0.82. Bisect, and re-run with `--runs 3`.
+
 ## Wagers
 
 A bet on the next wave, taken during the rest and spent the moment it starts.
@@ -339,17 +394,18 @@ spawn point, or towers that can be repositioned, would each add one.
 ## Balance
 
 Simulation-checked, not guessed. `tools/sim.mjs` runs the real `game.js`
-headlessly through all six maps, three difficulties and nine build strategies
-— 162 runs in under a minute.
+headlessly through all seven maps, three difficulties and nine build
+strategies — 189 runs in a couple of minutes.
 
 ```
 level           easy         normal        hard
-1. landing      9/9 win 25/25 9/9 win 13/20 3/9 win 8/18
-2. palmrun      9/9 win 25/25 7/9 win 17/20 4/9 win 10/18
-3. deepwood     9/9 win 24/25 7/9 win 16/20 1/9 win 7/18
-4. millpond     9/9 win 24/25 7/9 win 18/20 4/9 win 14/18
-5. frostgate    9/9 win 24/25 6/9 win 14/20 3/9 win 3/18
-6. longroad     9/9 win 25/25 6/9 win 20/20 4/9 win 15/18
+1. landing      9/9 win 23/25 8/9 win 11/20 4/9 win 7/18
+2. palmrun      9/9 win 22/25 7/9 win 12/20 2/9 win 4/18
+3. deepwood     9/9 win 25/25 7/9 win 15/20 0/9 · w15
+4. millpond     9/9 win 22/25 7/9 win 14/20 3/9 win 8/18
+5. frostgate    9/9 win 25/25 5/9 win 15/20 1/9 win 1/18
+6. longroad     9/9 win 25/25 7/9 win 14/20 1/9 win 3/18
+7. crossroads   7/9 win 22/25 6/9 win 11/20 1/9 win 3/18
 ```
 
 Easy is comfortable, normal is cleared by most builds, hard is tight and
@@ -541,19 +597,15 @@ Deliberate omissions, not oversights:
   from the pack's JPEGs by keying the black surround — good, but inferred.
   See **Dropping in the real art** above. This no longer touches backgrounds,
   only towers, enemies and UI.
-- **Gems accumulate and buy nothing.** One per wave cleared, five per level.
-  They are the obvious hook for permanent progression and currently a number
-  that goes up. Either spend them or remove them.
 - **Bosses do not change which build wins.** They have real mechanics now, but
   at two boss waves in fifteen the other thirteen decide the run. Moving that
   needs bosses to be more central — more boss waves, or a mechanic that
   persists past the boss's death — not more mechanics.
 - **Two bosses wear borrowed art.** Warlord is the sentinel's sheet and
   matriarch the ogre's, both at boss scale.
-- **Maps differ by geometry, roster and curve only.** No conveyor, no second
-  entrance, no hazard, no tower restriction. The renderer also has no
-  elevation, so cliffs, bridges and crossing roads all need height support it
-  does not have.
+- **The renderer has no elevation.** Cliffs, bridges and roads that cross are
+  all off the table until it understands height. Second entrances and tower
+  bans exist; conveyors and hazards do not.
 - **No music.** The toggle persists and the sound effects are synthesised
   oscillators — there are no audio assets in the pack at all.
 - **No achievements.** The pack has a window for them; nothing opens it,
