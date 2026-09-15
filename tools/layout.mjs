@@ -25,14 +25,14 @@ const SIZES = [
   ['phone-lg',   430, 932], ['landscape',  915, 412],
   ['tablet',    1024, 768], ['desktop',   1440, 900],
 ];
-const IDS = ['stats','battleInfo','wavePreview','rightControls','bottomBar','banner'];
+const IDS = ['stats','waveStack','rightControls','bottomBar','banner'];
 let bad = 0;
 for (const [name, width, height] of SIZES) {
   const page = await b.newPage({ viewport: { width, height } });
   const errs = []; page.on('pageerror', e => errs.push(e.message));
   await page.goto('http://localhost:8734/', { waitUntil:'networkidle' });
   await page.waitForFunction(()=>!document.getElementById('boot'),null,{timeout:20000});
-  await page.evaluate(()=>{ newRun(3,'normal'); S.wave=8; S.phase='ready';
+  await page.evaluate(()=>{ newRun(5,'normal'); S.wave=8; S.phase='ready';
     S.restLeft=20000; S.dirty=true; syncHud(); syncWaveState();
     // Clearing a wave puts the banner up AND the next-wave panel up, in the
     // same instant — the state where they can collide, so it is the state
@@ -50,7 +50,7 @@ for (const [name, width, height] of SIZES) {
       const A=box[k[i]],B=box[k[j]];
       if (!(A.r<=B.l||A.l>=B.r||A.b<=B.t||A.t>=B.b)) hits.push(`${k[i]}/${k[j]}`);
     }
-    const pv=box.wavePreview;
+    const pv=box.waveStack;
     const off = pv && (pv.l<0||pv.r>innerWidth||pv.t<0||pv.b>innerHeight);
     return { hits, off, pv };
   }, IDS);

@@ -221,7 +221,20 @@
   .stat span{position:absolute;right:12px;top:3px;z-index:2;font:900 16px Arial;
     text-shadow:2px 2px 3px #000}
 
-  #battleInfo{position:absolute;left:50%;top:2vh;transform:translateX(-50%);
+  /* The three wave panels stack in one column instead of each placing itself.
+     Hand-placed `top` values cannot work here: every panel's height depends on
+     its content — how many kinds are in the next wave, how many warnings,
+     whether a wager row is up — so any fixed offset is right for one wave and
+     wrong for the next. Five of six viewports were overlapping before this. */
+  #waveStack{position:absolute;left:50%;top:2vh;transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;gap:6px;
+    max-width:min(460px,86vw)}
+  /* Centred at the top only where there is room beside the stats box. Below
+     about 1100px the two meet in the middle, so the stack drops underneath
+     it instead — there is a screenful of unused space above the board and
+     none to the left of it. */
+  @media(max-width:1100px){ #waveStack{top:120px} }
+  #battleInfo{
     min-width:172px;padding:7px 16px;border:3px solid var(--wood);border-radius:16px;
     background:var(--panel);box-shadow:0 5px 12px #0008;text-align:center;
     text-shadow:2px 2px 3px #000}
@@ -232,8 +245,7 @@
   /* The next-wave panel. Hangs off the bottom of the wave counter so the two
      read as one block, and is only present between waves — during a wave the
      board is the information and a panel over it is in the way. */
-  #wavePreview{position:absolute;left:50%;transform:translateX(-50%);
-    top:calc(2vh + 74px);min-width:172px;max-width:min(420px,86vw);
+  #wavePreview{min-width:172px;max-width:100%;
     padding:6px 12px 7px;border:3px solid var(--wood);border-radius:16px;
     background:var(--panel);box-shadow:0 5px 12px #0008;text-align:center;
     text-shadow:2px 2px 3px #000;opacity:0;transition:opacity .18s;
@@ -254,6 +266,24 @@
   .pvTag.held{background:#2c2a1c;border-color:#6b6045;color:#b9ac86}
   #previewBoss{font:900 9px Arial;color:#ff9c6b;letter-spacing:1px;margin-top:4px}
   #previewBoss:empty{display:none}
+
+  /* The bet on the next wave. Its own strip below the preview, because it is
+     the one thing in the HUD a player TAPS between waves — the rest of the
+     HUD is read, and read-only furniture is pointer-events:none. */
+  #wagerBar{display:flex;gap:5px;justify-content:center;flex-wrap:wrap;
+    max-width:100%;opacity:0;transition:opacity .18s;pointer-events:none}
+  #wagerBar.show{opacity:1;pointer-events:auto}
+  #wagerBar:empty{display:none}
+  .wager{border:3px solid #7a4a1e;border-radius:12px;background:rgba(28,30,20,.88);
+    padding:3px 8px 4px;color:var(--cream);text-align:center;min-width:0;
+    box-shadow:0 4px 10px #0008;text-shadow:2px 2px 3px #000}
+  .wager .n{display:block;font:900 10px Arial;color:var(--gold);letter-spacing:1px}
+  .wager .r{display:block;font:900 8px Arial;color:#ff9c6b;letter-spacing:.4px}
+  .wager .p{display:block;font:900 9px Arial;color:#8bf39a;letter-spacing:.4px}
+  .wager.on{border-color:var(--gold);background:#4a3312}
+  .wager:active{transform:scale(.95)}
+  #wagerHint{font:900 8px Arial;color:var(--cream);letter-spacing:1.2px;
+    align-self:center;opacity:.75;white-space:nowrap}
 
   #rightControls{position:absolute;right:2vw;top:2vh;display:flex;
     flex-direction:column;gap:10px;align-items:center}
@@ -342,8 +372,10 @@
     .stat{height:27px}
     .stat b{left:8px;top:7px;font-size:8px}
     .stat span{right:9px;top:3px;font-size:13px}
-    #battleInfo{top:8px;min-width:130px;padding:5px 10px;border-radius:12px}
-    #wavePreview{top:70px;min-width:130px;padding:4px 9px 5px;border-radius:12px}
+    #waveStack{top:88px;gap:5px;max-width:92vw}
+    #banner{top:75%}
+    #battleInfo{min-width:130px;padding:5px 10px;border-radius:12px}
+    #wavePreview{min-width:130px;padding:4px 9px 5px;border-radius:12px}
     .pvUnit{width:30px;height:30px}
     .pvTag{font-size:8px;padding:2px 5px}
     #rightControls{right:8px;top:8px;gap:7px}
@@ -363,22 +395,27 @@
     .win{width:95vw;height:82vh}
   }
   /* Short-and-wide (phone held in landscape): the HUD must not eat the board. */
-  @media(max-width:760px) and (min-height:461px){
-    #battleInfo{top:90px}
-    #wavePreview{top:152px}
-  }
   @media(max-height:460px){
     #bottomBar{height:68px}
     .slot{max-width:62px}
     #stats{width:180px}
     #battleInfo{padding:4px 9px}
+/* Landscape is the tightest case: stack, banner and tower tray all want the
+       same vertical strip. The enemy count goes — the board and the next-wave
+       panel both already say what is coming — and that buys the banner the
+       room to sit between the stack and the tray instead of on one of them. */
+    #enemyCount{display:none}
+    #banner{top:73%}
+    #banner b{font-size:clamp(20px,3.6vw,34px)}
+    #banner i{font-size:clamp(9px,1.5vw,13px)}
     /* Landscape is how the game is actually held, and there the board fills
        the screen — so a tall panel parked at top-centre sits on the road. It
        only shows between waves and taps pass straight through it, but it
        still hides a pad you might want. Laid out as one row it covers a strip
        instead of a block. */
-    #wavePreview{top:110px;display:flex;align-items:center;gap:8px;
-      max-width:min(460px,62vw);padding:3px 10px}
+    #waveStack{max-width:min(560px,66vw)}
+    #wavePreview{display:flex;align-items:center;gap:8px;
+      max-width:100%;padding:3px 10px}
     #previewHdr{white-space:nowrap}
     #previewRoster{margin-top:0;flex-wrap:nowrap}
     #previewThreats{margin-top:0;flex-wrap:nowrap}
@@ -396,16 +433,19 @@
     <div class="stat"><img src="assets/bar_gems.png" alt=""><b>GEMS</b><span id="sGems">0</span></div>
     <div class="stat"><img src="assets/bar_stars.png" alt=""><b>SCORE</b><span id="sScore">0</span></div>
   </div>
-  <div id="battleInfo">
-    <div id="waveLabel">WAVE 0/15</div>
-    <div id="waveState">READY</div>
-    <div id="enemyCount">ENEMIES 0</div>
-  </div>
-  <div id="wavePreview" aria-live="polite">
-    <div id="previewHdr">NEXT WAVE</div>
-    <div id="previewRoster"></div>
-    <div id="previewThreats"></div>
-    <div id="previewBoss"></div>
+  <div id="waveStack">
+    <div id="battleInfo">
+      <div id="waveLabel">WAVE 0/15</div>
+      <div id="waveState">READY</div>
+      <div id="enemyCount">ENEMIES 0</div>
+    </div>
+    <div id="wavePreview" aria-live="polite">
+      <div id="previewHdr">NEXT WAVE</div>
+      <div id="previewRoster"></div>
+      <div id="previewThreats"></div>
+      <div id="previewBoss"></div>
+    </div>
+    <div id="wagerBar"></div>
   </div>
   <div id="rightControls">
     <button id="pause" aria-label="Pause">&#10073;&#10073;</button>

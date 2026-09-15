@@ -145,6 +145,43 @@ on the ground under it. Text does not work there: the map draws at about a
 fifth of size on a phone, so a thirteen-pixel badge becomes four and its
 letters become nothing.
 
+## Support enemies
+
+Three roles whose value is in what they do for the enemies *around* them, which
+is what makes target priority a decision. Every other kind is worth shooting in
+the order it arrives; these are worth shooting first.
+
+| kind | does | the answer |
+|---|---|---|
+| **SHAMAN** | heals every nearby enemy a little each second | out-damage the heal, or kill the shaman |
+| **BULWARK** | nearby enemies take reduced damage while it lives | kill it — splash does *not* bypass an aura the way it bypasses armour |
+| **PHANTOM** | towers pass over it while anything else is in range | splash, to dig it out of the crowd it hides in |
+
+`support` is a fifth wave role alongside fodder / fast / heavy / boss. Every
+curve schedules it on four waves of fifteen, and a level opts in by naming one
+in its roster — a roster with no `support` fields none, which is why the
+opening level stays a plain fight.
+
+Two numbers here are load-bearing:
+
+- **The bulwark's aura multiplies whatever armour already did.** A siege
+  roster's heavies sit at 0.62 before it applies; pairing that with a 0.62 aura
+  left 38% of a hit landing and made three levels unwinnable on hard. It stays
+  mild deliberately.
+- **Support on nearly every wave is a flat tax, not a mechanic.** Scheduled
+  from wave six onward it put four levels out of reach on hard while the units
+  themselves measured fine in isolation. Sparse, each arrival is a thing to
+  notice.
+
+**The phantom was unanswerable on its first cut** and `tools/specs.mjs`-style
+benching is the only reason that was caught. Made flatly untargetable, it took
+*zero* damage from every tower in the game at any upgrade level — because
+splash and chain only ever fire as a consequence of a shot landing, so with
+nothing targetable no tower shoots, no shot lands, and there is no splash. It
+now hides *in a crowd* rather than outright: alone it is targeted normally,
+which keeps the mechanic (splash digs it out) and makes an unhittable enemy
+impossible to construct.
+
 ## Bosses
 
 Three, one mechanic each, spread across the campaign as part of a level's
