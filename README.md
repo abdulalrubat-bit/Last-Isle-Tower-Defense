@@ -145,6 +145,40 @@ on the ground under it. Text does not work there: the map draws at about a
 fifth of size on a phone, so a thirteen-pixel badge becomes four and its
 letters become nothing.
 
+## Bosses
+
+Three, one mechanic each, spread across the campaign as part of a level's
+roster:
+
+| boss | mechanic | the answer |
+|---|---|---|
+| **DEMON LORD** | SHIELD — an absorbing pool that goes up, holds, drops, refreshes | burst it down; chipping never gets through before it refreshes |
+| **THE WARLORD** | JAM — silences the nearest tower it walks past, then the next | towers spread along the road, not one strong killbox |
+| **THE MATRIARCH** | SUMMON — drops fodder behind itself as it walks | kill it fast, or carry something that clears crowds |
+
+The next-wave panel warns three waves out with the mechanic's name, derived
+from the boss kind rather than written per level.
+
+**SUMMON must stay capped over the boss's whole life, not merely paced.**
+Uncapped it put out sixty extra enemies in one crossing and made both levels
+it appeared on unwinnable on *easy*. A slow boss survives a long time, so a
+rate limit cannot bound the total; only a total can.
+
+`node tools/bosses.mjs` benches each mechanic in isolation. Read the SHIELD
+pair: chipping leaves the pool up for hundreds of frames across several cycles
+and the boss lives; adding burst collapses it in one cycle and kills it. If
+those two lines ever look alike, the shield has gone back to being hit points.
+
+**What bosses do not do**, measured: they do not change *which build wins* a
+level. Two waves in fifteen carry a boss and the other thirteen decide the
+run, so the spread by boss type sits inside the sweep's own noise. The one
+real signal is `boss-killer/lance` at 4/6 against SHIELD and 2/6 against
+SUMMON — single-target damage being the wrong answer to a summoner. Making
+bosses central enough to move the answer is a larger change than adding them
+was.
+
+Warlord and matriarch reuse the sentinel's and ogre's sheets at boss scale.
+
 ## Telling the player what is coming
 
 Between waves the HUD shows the next wave's roster as portraits with counts,
@@ -306,6 +340,9 @@ node tools/sim.mjs --forks                      # one tower fork at a time
 # Does each specialisation actually DO anything? (a sweep cannot tell)
 node tools/specs.mjs
 
+# Does each boss mechanic fire, and can it be answered?
+node tools/bosses.mjs
+
 # Does the HUD collide with itself at any size?
 node tools/layout.mjs
 
@@ -433,11 +470,12 @@ Deliberate omissions, not oversights:
 - **Gems accumulate and buy nothing.** One per wave cleared, five per level.
   They are the obvious hook for permanent progression and currently a number
   that goes up. Either spend them or remove them.
-- **Bosses are a large health bar.** The demon has sixteen times the hit points
-  and no mechanic of its own — no summoning, no shield phase, nothing that
-  changes how the wave is fought. The next-wave panel now announces it
-  properly, which rather draws attention to there being nothing behind the
-  announcement.
+- **Bosses do not change which build wins.** They have real mechanics now, but
+  at two boss waves in fifteen the other thirteen decide the run. Moving that
+  needs bosses to be more central — more boss waves, or a mechanic that
+  persists past the boss's death — not more mechanics.
+- **Two bosses wear borrowed art.** Warlord is the sentinel's sheet and
+  matriarch the ogre's, both at boss scale.
 - **Maps differ by geometry, roster and curve only.** No conveyor, no second
   entrance, no hazard, no tower restriction. The renderer also has no
   elevation, so cliffs, bridges and crossing roads all need height support it
