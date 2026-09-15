@@ -145,6 +145,33 @@ on the ground under it. Text does not work there: the map draws at about a
 fifth of size on a phone, so a thirteen-pixel badge becomes four and its
 letters become nothing.
 
+## Wagers
+
+A bet on the next wave, taken during the rest and spent the moment it starts.
+
+| wager | risk | pays |
+|---|---|---|
+| **SWIFT** | +30% enemy speed | +45% energy |
+| **HARDENED** | −22% damage dealt to them | +50% energy |
+| **HORDE** | +40% enemy numbers | +40% energy |
+
+One per wave and never compulsory — take one when you are ahead and want the
+tempo, decline when you are not. Until this existed the only choice between
+waves was what to buy, and buying is never a risk.
+
+Two rules that matter:
+
+- **HORDE swells the ordinary ranks, not the boss count.** Three demons on
+  wave ten is not a harder version of that wave, it is a different and much
+  worse one.
+- **The bet is locked at wave start.** `S.wager` is what is selected;
+  `S.wagerLive` is what the wave in flight is running under. Without the pair,
+  choosing for the next wave would retroactively change the current one.
+
+None of the simulation's builds take a wager, so the balance table measures
+the game without them and a wager can only be something a player reaches for,
+never a tax they have to beat.
+
 ## Support enemies
 
 Three roles whose value is in what they do for the enemies *around* them, which
@@ -196,10 +223,13 @@ roster:
 The next-wave panel warns three waves out with the mechanic's name, derived
 from the boss kind rather than written per level.
 
-**SUMMON must stay capped over the boss's whole life, not merely paced.**
-Uncapped it put out sixty extra enemies in one crossing and made both levels
-it appeared on unwinnable on *easy*. A slow boss survives a long time, so a
-rate limit cannot bound the total; only a total can.
+**SUMMON's cap is a budget for the WAVE, shared by every summoner in it.**
+This has now been paid for twice. Uncapped it put out sixty extra enemies in
+one crossing and made both its levels unwinnable on *easy*. Capped per boss it
+bounded a single summoner correctly — and then the siege curve's final wave
+fielded two, doubled the flood, and took both levels that use that boss to
+**0 of 27 runs** on hard, reaching wave 15 and dying there every time. Bound
+the total the player actually faces; never the rate, never the per-unit share.
 
 `node tools/bosses.mjs` benches each mechanic in isolation. Read the SHIELD
 pair: chipping leaves the pool up for hundreds of frames across several cycles
@@ -327,9 +357,16 @@ winnable on every map. Read it as a spread: a level nothing clears is a wall,
 a level everything clears is not asking anything.
 
 **The sweep is noisy.** The wave queue is shuffled, so repeating it on
-unchanged code moves each strategy by about two runs in eighteen. A one-run
-lead means nothing. What is worth acting on is a build or a fork that wins
-nearly everything, or nearly nothing.
+unchanged code moves each strategy by about two runs in eighteen, and a level
+sitting near the edge on hard can read 0/9 one run and 3/9 the next. A one-run
+lead means nothing.
+
+**Before believing a level is a wall, re-run it with `--runs 3`.** The
+difference is not subtle once you do: `deepwood` and `frostgate` came back
+0 of 27 on hard — a real wall, fixed by making the summon cap a wave budget —
+while `longroad` read 0/9 in the same sweep and 3/27 over three runs, which is
+just noise. One of those needed a code change and the other needed nothing,
+and a single sweep cannot tell them apart.
 
 Four things the simulation found that reading the code would not have:
 
@@ -517,8 +554,6 @@ Deliberate omissions, not oversights:
   entrance, no hazard, no tower restriction. The renderer also has no
   elevation, so cliffs, bridges and crossing roads all need height support it
   does not have.
-- **No risk/reward wager.** Calling a wave early for +3 energy a second is the
-  only one in the game.
 - **No music.** The toggle persists and the sound effects are synthesised
   oscillators — there are no audio assets in the pack at all.
 - **No achievements.** The pack has a window for them; nothing opens it,
