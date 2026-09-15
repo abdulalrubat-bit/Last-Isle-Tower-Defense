@@ -25,7 +25,7 @@ const SIZES = [
   ['phone-lg',   430, 932], ['landscape',  915, 412],
   ['tablet',    1024, 768], ['desktop',   1440, 900],
 ];
-const IDS = ['stats','battleInfo','wavePreview','rightControls','bottomBar'];
+const IDS = ['stats','battleInfo','wavePreview','rightControls','bottomBar','banner'];
 let bad = 0;
 for (const [name, width, height] of SIZES) {
   const page = await b.newPage({ viewport: { width, height } });
@@ -33,7 +33,11 @@ for (const [name, width, height] of SIZES) {
   await page.goto('http://localhost:8734/', { waitUntil:'networkidle' });
   await page.waitForFunction(()=>!document.getElementById('boot'),null,{timeout:20000});
   await page.evaluate(()=>{ newRun(3,'normal'); S.wave=8; S.phase='ready';
-    S.restLeft=20000; S.dirty=true; syncHud(); syncWaveState(); });
+    S.restLeft=20000; S.dirty=true; syncHud(); syncWaveState();
+    // Clearing a wave puts the banner up AND the next-wave panel up, in the
+    // same instant — the state where they can collide, so it is the state
+    // this checks. Held open rather than left to time out.
+    banner('WAVE 8 CLEAR', '+136 ENERGY', false, 60000); });
   await page.waitForTimeout(250);
   const r = await page.evaluate((ids)=>{
     const box = {};

@@ -220,7 +220,6 @@
     color:#fff;text-shadow:2px 2px 3px #000;letter-spacing:.5px}
   .stat span{position:absolute;right:12px;top:3px;z-index:2;font:900 16px Arial;
     text-shadow:2px 2px 3px #000}
-  .stat.flash span{color:#ff7b5e}
 
   #battleInfo{position:absolute;left:50%;top:2vh;transform:translateX(-50%);
     min-width:172px;padding:7px 16px;border:3px solid var(--wood);border-radius:16px;
@@ -311,6 +310,33 @@
     opacity:0;transition:opacity .2s ease}
   #toast.show{opacity:1}
 
+  /* Banners. The board draws at about a fifth of its size on a phone, so
+     anything announced ON it is unreadable — these are DOM, sized in viewport
+     units, and legible at every size the game runs at. */
+  /* Below the next-wave panel, not over it. Clearing a wave shows both at the
+     same moment — the banner says what was just earned and the panel says what
+     is coming — and the first version drew one straight through the other. */
+  #banner{position:absolute;left:50%;top:58%;transform:translate(-50%,-50%) scale(.82);
+    z-index:6;text-align:center;pointer-events:none;opacity:0;
+    transition:opacity .18s ease,transform .18s ease}
+  #banner.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+  #banner b{display:block;font:900 clamp(24px,6.4vw,54px) Arial;letter-spacing:2px;
+    color:var(--gold);text-shadow:4px 4px 0 #21140d,0 0 22px #000}
+  #banner i{display:block;font:900 clamp(11px,2.4vw,19px) Arial;font-style:normal;
+    letter-spacing:2px;color:var(--cream);text-shadow:3px 3px 0 #21140d;margin-top:4px}
+  #banner.bad b{color:#ff8a5c}
+  #banner.bad i{color:#ffc9b0}
+
+  /* The lives readout is the answer to "how close am I to losing", so it stops
+     being a quiet number once the answer is "very". */
+  .stat.flash span{color:#ff7b5e}
+  .stat.danger span{color:#ff6a4a;animation:lowPulse .85s ease-in-out infinite}
+  @keyframes lowPulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @media(prefers-reduced-motion:reduce){
+    .stat.danger span{animation:none}
+    #banner{transition:opacity .18s ease}
+  }
+
   @media(max-width:760px){
     #stats{left:8px;top:8px;width:196px;min-width:0;padding:6px 8px;border-radius:15px}
     .stat{height:27px}
@@ -400,6 +426,7 @@
     </button>
   </div>
   <div id="toast"></div>
+  <div id="banner"><b></b><i></i></div>
 </div>
 
 <div class="overlay" id="upgradeOverlay">

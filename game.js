@@ -305,6 +305,14 @@ function waveSpec(n) {
   return c[n - 1] || c[c.length - 1];
 }
 
+// Enemy kinds are keyed by what they are in the code; a banner wants what they
+// are to the player.
+const KIND_NAME = {
+  goblin:'GOBLIN HORDE', scorpion:'SCORPION', wisp:'WISP', raider:'RAIDER',
+  feline:'PROWLER', wizard:'WARLOCK', sentinel:'SENTINEL', warden:'WARDEN',
+  ogre:'OGRE', demon:'DEMON LORD',
+};
+
 const DEFAULT_ROSTER =
   { fodder:'goblin', fast:'scorpion', heavy:'ogre', boss:'demon' };
 
@@ -343,6 +351,8 @@ const S = {
   wave: 0,
   phase: 'ready',        // ready | spawning | clearing | done
   restLeft: 0,
+  maxLives: 0, bossCalled: false,
+  shakeUntil: 0, shakeMag: 0, leakUntil: 0,
   queue: [],             // enemy kinds still to spawn this wave
   spawnIn: 0,
   towers: [], enemies: [], shots: [], fx: [], corpses: [],
@@ -557,6 +567,8 @@ function sfx(type) {
     build: [320, 660, 0.14, 'sine',     0.10],
     sell:  [660, 240, 0.16, 'sine',     0.09],
     leak:  [240,  90, 0.30, 'sawtooth', 0.12],
+    clear: [440, 880, 0.26, 'sine',     0.11],
+    boss:  [150,  60, 0.55, 'sawtooth', 0.16],
     win:   [520, 980, 0.45, 'sine',     0.14],
     lose:  [300,  70, 0.70, 'sawtooth', 0.15],
   }[type];
@@ -758,6 +770,7 @@ function startWave(manual) {
     toast(`+${bonus} ENERGY — CALLED EARLY`);
   }
   S.wave++;
+  S.bossCalled = false;
   S.queue = buildQueue(waveSpec(S.wave));
   S.phase = 'spawning';
   S.spawnIn = 0;
@@ -788,6 +801,15 @@ function enemyPos(e) {
 
 function spawn(kind, atDist) {
   const k = KINDS[kind], d = DIFF[S.diff];
+  // The next-wave panel says a boss is coming; this is it arriving. Announced
+  // once per wave — a wave with two bosses should not announce twice.
+  if (!S.bossCalled && atDist == null && waveSpec(S.wave).boss
+      && kind === roleKind('boss')) {
+    S.bossCalled = true;
+    banner('BOSS', KIND_NAME[kind] || '', true, 1800);
+    shake(11, 260);
+    sfx('boss');
+  }
   const hp = (66 + S.wave * 30) * k.hp * d.hp * LEVELS[S.level].hp;
   S.enemies.push({
     kind, dist: atDist || 0, hp, maxHp: hp,
@@ -808,7 +830,8 @@ function waveCleared() {
   if (S.wave >= WAVES.length) { finish(true); return; }
   S.phase = 'ready';
   S.restLeft = REST_MS;
-  toast(`WAVE ${S.wave} CLEARED  ·  +${bonus} ENERGY`);
+  banner(`WAVE ${S.wave} CLEAR`, `+${bonus} ENERGY`, false, 1600);
+  sfx('clear');
   S.dirty = true;
 }
 
@@ -956,6 +979,11 @@ function update(dt) {
       S.lives--;
       S.dirty = true;
       sfx('leak');
+      // Losing a life used to be a number quietly going down. It is the only
+      // thing in the game that can actually end the run, so it gets the
+      // loudest feedback in it.
+      S.leakUntil = S.time + 420;
+      shake(KINDS[e.kind].hp >= 8 ? 16 : 8, 220);
       if (S.lives <= 0) { S.lives = 0; finish(false); return; }
     }
   }
@@ -1045,8 +1073,20 @@ function render() {
   ctx.fillStyle = '#12180d';
   ctx.fillRect(0, 0, vw, vh);
 
+  let sx = 0, sy = 0;
+  if (S.time < S.shakeUntil) {
+    // Decays over its life, so a hit lands hard and settles rather than
+    // rattling at full strength and stopping dead.
+    const k = (S.shakeUntil - S.time) / 220;
+    const m = S.shakeMag * Math.min(1, k);
+    sx = (Math.random() * 2 - 1) * m;
+    sy = (Math.random() * 2 - 1) * m;
+  } else {
+    S.shakeMag = 0;
+  }
+
   ctx.save();
-  ctx.translate(ox, oy);
+  ctx.translate(ox + sx, oy + sy);
   ctx.scale(scale, scale);
   ctx.beginPath();
   ctx.rect(0, 0, MAP_W, MAP_H);
@@ -1064,6 +1104,30 @@ function render() {
   drawFx();
 
   ctx.restore();
+  drawDanger(vw, vh);
+}
+
+// "How close am I to losing?" answered without a number. Two sources feed the
+// same red edge: a leak just happened, or the life buffer is nearly gone. The
+// second is a steady breath rather than a flash, so a player under pressure
+// feels it continuously instead of only at the moment of loss.
+function drawDanger(vw, vh) {
+  let a = 0;
+  if (S.time < S.leakUntil) a = 0.55 * ((S.leakUntil - S.time) / 420);
+  if (S.screen === 'play' && S.phase !== 'done' && S.maxLives) {
+    const frac = S.lives / S.maxLives;
+    if (frac <= 0.3) {
+      const pulse = 0.5 + 0.5 * Math.sin(S.time / 380);
+      a = Math.max(a, (1 - frac / 0.3) * 0.30 * (0.45 + 0.55 * pulse));
+    }
+  }
+  if (a <= 0.004) return;
+  const g = ctx.createRadialGradient(vw / 2, vh / 2, Math.min(vw, vh) * 0.34,
+                                     vw / 2, vh / 2, Math.max(vw, vh) * 0.72);
+  g.addColorStop(0, 'rgba(190,20,10,0)');
+  g.addColorStop(1, `rgba(190,20,10,${a.toFixed(3)})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, vw, vh);
 }
 
 function drawPads() {
@@ -1344,6 +1408,29 @@ function buildSlots() {
 }
 
 let toastTimer = 0;
+// Announcements go in the DOM, not on the canvas. The board draws at roughly a
+// fifth of its size on a phone, so text painted into the map is unreadable at
+// any size worth using; a DOM banner is sized in viewport units and legible
+// everywhere. Same reason the specialisation mark on a tower is a colour and
+// not a word.
+let bannerTimer = 0;
+function banner(big, small, bad, ms) {
+  const b = el('banner');
+  b.querySelector('b').textContent = big;
+  b.querySelector('i').textContent = small || '';
+  b.classList.toggle('bad', !!bad);
+  b.classList.add('show');
+  clearTimeout(bannerTimer);
+  bannerTimer = setTimeout(() => b.classList.remove('show'), ms || 1500);
+}
+
+// Shake is applied to the whole board rather than to anything in it, so it
+// costs one translate and reads at any zoom.
+function shake(mag, ms) {
+  S.shakeMag = Math.max(S.shakeMag, mag);
+  S.shakeUntil = Math.max(S.shakeUntil, S.time + ms);
+}
+
 function toast(text) {
   const t = el('toast');
   t.textContent = text;
@@ -1357,6 +1444,13 @@ function syncHud() {
   S.dirty = false;
   el('sEnergy').textContent = Math.floor(S.energy);
   el('sLives').textContent = S.lives;
+  // The lives tile is the answer to "how close am I to losing", so below a
+  // third of the buffer it pulses instead of sitting there.
+  const livesTile = el('sLives').closest('.stat');
+  if (livesTile) {
+    livesTile.classList.toggle('danger',
+      S.screen === 'play' && S.maxLives > 0 && S.lives / S.maxLives <= 0.3);
+  }
   el('sGems').textContent = save.gems;
   el('sScore').textContent = S.score;
   el('waveLabel').textContent = `WAVE ${Math.max(1, S.wave)}/${WAVES.length}`;
@@ -1529,6 +1623,8 @@ function newRun(levelIndex, diff) {
   const d = DIFF[diff];
   S.energy = d.energy;
   S.lives = d.lives;
+  S.maxLives = d.lives;
+  S.shakeUntil = 0; S.shakeMag = 0; S.leakUntil = 0;
   S.score = 0;
   S.wave = 0;
   S.phase = 'ready';
