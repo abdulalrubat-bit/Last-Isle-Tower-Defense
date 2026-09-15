@@ -214,20 +214,53 @@ function derivePads(path, water, W, H, minGap, step) {
   return pads;
 }
 
+// Arc-length index for one polyline, so resolving a distance to a point is a
+// binary search rather than a walk from the start. Built per route.
+function measure(path) {
+  const seg = [];
+  let length = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const [ax, ay] = path[i], [bx, by] = path[i + 1];
+    const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy);
+    seg.push({ ax, ay, dx, dy, len, start: length, angle: Math.atan2(dy, dx) });
+    length += len;
+  }
+  return { path, seg, length };
+}
+
 function buildLevel(spec, W, H, padAdjust) {
   const pal = paletteFor(spec.palette);
-  const path = sampleSpline(spec.control, 12);
+  // A level may declare a SECOND road in `control2`. Everything downstream
+  // works off `routes`; `path`, `seg` and `length` stay as aliases to the
+  // first one so the renderer, the prop placement and every existing level
+  // carry on unchanged.
+  const routes = [measure(sampleSpline(spec.control, 12))];
+  if (spec.control2) routes.push(measure(sampleSpline(spec.control2, 12)));
+  const path = routes[0].path;
+  const allPaths = routes.map(r => r.path);
   const water = spec.water || [];
   // padGap is a difficulty dial — closer pads mean more towers covering the
   // same road — so the SURVEYOR unlock adjusts it rather than appending pads,
   // and the floor stops any unlock from stacking them on top of each other.
   const adj = padAdjust || 0;
-  const pads = derivePads(path, water, W, H,
-                          Math.max(118, (spec.padGap || 152) + adj),
-                          Math.max(132, 168 + adj));
+  const minGap = Math.max(118, (spec.padGap || 152) + adj);
+  const step = Math.max(132, 168 + adj);
+  // Pads come off every route, and a pad from one road must still clear the
+  // other — two roads that pass near each other would otherwise put a pad in
+  // the middle of the second one.
+  const pads = [];
+  for (const r of routes) {
+    for (const pad of derivePads(r.path, water, W, H, minGap, step)) {
+      if (pads.some(q => Math.hypot(q[0]-pad[0], q[1]-pad[1]) < minGap)) continue;
+      if (allPaths.some(pp => pp.some(q =>
+            Math.hypot(q[0]-pad[0], q[1]-pad[1]) < ROAD_W*0.5 + 24))) continue;
+      pads.push(pad);
+    }
+  }
   const rand = rng(spec.seed);
 
-  const clearOfRoad = (x, y, d) => !path.some(p => Math.hypot(p[0]-x, p[1]-y) < d);
+  const clearOfRoad = (x, y, d) =>
+    !allPaths.some(pp => pp.some(p => Math.hypot(p[0]-x, p[1]-y) < d));
   const clearOfPads = (x, y, d) => !pads.some(p => Math.hypot(p[0]-x, p[1]-y) < d);
   const clearOfWater = (x, y, d) =>
     !water.some(w => Math.hypot((x-w.x)/(w.rx+d), (y-w.y)/(w.ry+d)) < 1);
@@ -273,26 +306,18 @@ function buildLevel(spec, W, H, padAdjust) {
                  kind: rand() < 0.72 ? 'tuft' : rand() < 0.88 ? 'pebble' : 'bloom' });
   }
 
-  // Cumulative arc length, so resolving a distance to a point is a binary
-  // search rather than a walk from the start of the path. Enemies are
-  // positioned from this every frame, for every enemy.
-  const seg = [];
-  let length = 0;
-  for (let i = 0; i < path.length - 1; i++) {
-    const [ax, ay] = path[i], [bx, by] = path[i + 1];
-    const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy);
-    seg.push({ ax, ay, dx, dy, len, start: length, angle: Math.atan2(dy, dx) });
-    length += len;
-  }
-
-  return { spec, pal, path, pads, props, decor, water, seg, length, W, H };
+  return { spec, pal, path, pads, props, decor, water, routes,
+           seg: routes[0].seg, length: routes[0].length, W, H };
 }
 
-/* Where along the road is `dist`? The one function the game asks of a map. */
-function pathPointAt(level, dist) {
-  const seg = level.seg;
+/* Where along the road is `dist`? The one function the game asks of a map.
+   `route` selects which road when a level has more than one; absent means the
+   first, which is every level that declares no second. */
+function pathPointAt(level, dist, route) {
+  const r = (level.routes && level.routes[route || 0]) || level;
+  const seg = r.seg;
   if (dist <= 0) { const s = seg[0]; return { x: s.ax, y: s.ay, angle: s.angle }; }
-  if (dist >= level.length) {
+  if (dist >= r.length) {
     const s = seg[seg.length - 1];
     return { x: s.ax + s.dx, y: s.ay + s.dy, angle: s.angle };
   }
@@ -361,7 +386,9 @@ function renderLevel(level, canvasFactory) {
   for (const d of level.decor) drawDecor(ctx, pal, d);
   for (const w of level.water) drawWater(ctx, pal, w, rand);
   ROAD_ART = art;
-  drawRoad(ctx, pal, level.path, rand, tiles, canvasFactory, W, H);
+  for (const r of (level.routes || [level])) {
+    drawRoad(ctx, pal, r.path, rand, tiles, canvasFactory, W, H);
+  }
   for (const p of level.props) {
     if (p.art) drawAtlasProp(ctx, pal, p);
     else drawProp(ctx, pal, p);

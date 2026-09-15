@@ -101,7 +101,15 @@ const rows = await page.evaluate(({ only, runs, full, lvlArg, sweep, forks }) =>
       for (let n = 0; n < pads.length; n++) {
         const pad = order[n];
         if (S.towers.some(t => t.pad === pad)) continue;
-        const type = cfg.build[n % cfg.build.length], def = TOWERS[type];
+        // A level may ban tower types. The bot places towers directly rather
+        // than through the tap handler, so without this it would happily build
+        // what the player cannot and report a balance nobody can reach.
+        let type = cfg.build[n % cfg.build.length];
+        for (let k = 0; k < cfg.build.length && banned(type); k++) {
+          type = cfg.build[(n + k + 1) % cfg.build.length];
+        }
+        if (banned(type)) continue;
+        const def = TOWERS[type];
         if (S.energy >= def.cost) {
           S.energy -= def.cost;
           S.towers.push({ x:pads[pad][0], y:pads[pad][1], pad, type, spec:null,

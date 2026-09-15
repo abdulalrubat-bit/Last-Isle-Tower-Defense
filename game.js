@@ -80,6 +80,31 @@ const LEVELS = [
              [740,540],[700,340],[860,220],[1080,240],[1180,420],[1120,620],
              [1300,720],[1480,620],[1580,440]],
     water:[{x:980,y:700,rx:140,ry:62,rot:-.1}] },
+
+  // The map-mechanics level. Two roads, entered from opposite corners, walked
+  // alternately — every tower that covers one of them covers none of the
+  // other, so the question stops being "where is the best spot" and becomes
+  // "how do I split what I have".
+  //
+  // It also bans the arcane tower, which is the splash answer to an armoured
+  // roster, while fielding one. Two mechanics on one map on purpose: this is
+  // the last level, and it should ask something the other six do not.
+  // Palette chosen for road-against-ground contrast rather than mood: `forge`
+  // was the first pick and its road and its dirt differ by six points of
+  // luminance, which on a map whose whole point is covering TWO roads made
+  // both of them nearly invisible. `ash` sits at fifty, about where jungle
+  // does, and jungle reads fine.
+  { id:'crossroads', name:'THE CROSSROADS', palette:'ash', hp:0.82, seed:61207,
+    props:300, decor:600, padGap:150,
+    roster:{ fodder:'goblin', fast:'scorpion', heavy:'sentinel', boss:'warlord',
+             support:'shaman' },
+    curve:'standard',
+    ban:['arcane'],
+    control:[[-40,180],[190,190],[360,270],[470,420],[640,470],[820,430],
+             [960,330],[1140,300],[1330,360],[1450,470],[1580,520]],
+    control2:[[-40,720],[200,700],[380,610],[500,640],[680,690],[880,660],
+              [1020,560],[1180,540],[1340,600],[1460,660],[1580,700]],
+    water:[{x:760,y:120,rx:150,ry:62,rot:.06}] },
 ];
 
 const levelById = id => LEVELS.findIndex(l => l.id === id);
@@ -479,7 +504,7 @@ const S = {
   phase: 'ready',        // ready | spawning | clearing | done
   restLeft: 0,
   maxLives: 0, bossCalled: false,
-  wager: [], wagerLive: [], summonBudget: 0,
+  wager: [], wagerLive: [], summonBudget: 0, roadTurn: -1,
   shakeUntil: 0, shakeMag: 0, leakUntil: 0,
   queue: [],             // enemy kinds still to spawn this wave
   spawnIn: 0,
@@ -1025,22 +1050,27 @@ function spawnInterval() {
 
 // Flyers cross the board in a straight line between the road's two ends, so
 // they need their own route length to know when they have left.
-function routeLen(kind) {
-  if (!KINDS[kind].flying) return S.map.length;
-  const p = S.map.path, a = p[0], b = p[p.length - 1];
+function routeOf(e) {
+  return (S.map.routes && S.map.routes[e.route || 0]) || S.map;
+}
+
+function routeLen(e) {
+  const r = routeOf(e);
+  if (!KINDS[e.kind].flying) return r.length;
+  const p = r.path, a = p[0], b = p[p.length - 1];
   return Math.hypot(b[0] - a[0], b[1] - a[1]);
 }
 
 function enemyPos(e) {
-  if (!KINDS[e.kind].flying) return pathPointAt(S.map, e.dist);
-  const p = S.map.path, a = p[0], b = p[p.length - 1];
+  if (!KINDS[e.kind].flying) return pathPointAt(S.map, e.dist, e.route);
+  const p = routeOf(e).path, a = p[0], b = p[p.length - 1];
   const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
   const t = Math.min(1, e.dist / len);
   return { x: a[0] + (b[0] - a[0]) * t, y: a[1] + (b[1] - a[1]) * t,
            angle: Math.atan2(b[1] - a[1], b[0] - a[0]) };
 }
 
-function spawn(kind, atDist) {
+function spawn(kind, atDist, route) {
   const k = KINDS[kind], d = DIFF[S.diff];
   // The next-wave panel says a boss is coming; this is it arriving. Announced
   // once per wave — a wave with two bosses should not announce twice.
@@ -1054,8 +1084,13 @@ function spawn(kind, atDist) {
   }
   const w = wagerStack(S.wagerLive);
   const hp = (66 + S.wave * 30) * k.hp * d.hp * LEVELS[S.level].hp;
+  // Roads alternate strictly rather than being picked at random, so a level
+  // with two entrances always presents both and never rolls a wave down one
+  // of them by chance.
+  const roads = (S.map.routes && S.map.routes.length) || 1;
+  const road = route != null ? route : (roads > 1 ? (S.roadTurn = (S.roadTurn + 1) % roads) : 0);
   S.enemies.push({
-    kind, dist: atDist || 0, hp, maxHp: hp,
+    kind, route: road, dist: atDist || 0, hp, maxHp: hp,
     // HARDENED is a damage-taken multiplier rather than extra health, so the
     // health bar still reads as the fraction of the enemy that is left.
     tough: w.tough,
@@ -1206,7 +1241,7 @@ function updateBoss(e, b) {
     const kind = roleKind('fodder');
     for (let i = 0; i < b.n && S.summonBudget > 0; i++) {
       S.summonBudget--;
-      spawn(kind, Math.max(0, e.dist - 40 - i * 34));
+      spawn(kind, Math.max(0, e.dist - 40 - i * 34), e.route);
       S.enemies[S.enemies.length - 1].wasSplit = true;
     }
     S.fx.push({ kind:'boom', x:e.x, y:e.y - KINDS[e.kind].size * 0.35,
@@ -1261,7 +1296,7 @@ function damage(e, amount, ignoreArmour) {
       // Spread the children along the road so they do not stack into one
       // sprite, and mark them so a split cannot cascade forever.
       for (let i = 0; i < k.split.n; i++) {
-        spawn(k.split.into, Math.max(0, e.dist - 14 + i * 28));
+        spawn(k.split.into, Math.max(0, e.dist - 14 + i * 28), e.route);
         S.enemies[S.enemies.length - 1].wasSplit = true;
       }
     }
@@ -1360,7 +1395,7 @@ function update(dt) {
     const p = enemyPos(e);
     e.x = p.x; e.y = p.y; e.angle = p.angle;
     if (ek.boss) updateBoss(e, ek.boss);
-    if (e.dist >= routeLen(e.kind)) {
+    if (e.dist >= routeLen(e)) {
       e.hp = 0;
       e.leaked = true;
       S.lives--;
@@ -1877,9 +1912,19 @@ const el = id => document.getElementById(id);
 const hud = el('hud');
 const slotsWrap = el('towerSlots');
 
+// A level may forbid tower types outright. Cheaper than any other map
+// mechanic and the one with the most effect on a build: a map that bans the
+// splash tower is a different problem to the same map without the ban, and no
+// amount of energy buys around it.
+function banned(type) {
+  const b = LEVELS[S.level] && LEVELS[S.level].ban;
+  return !!(b && b.includes(type));
+}
+
 function buildSlots() {
   slotsWrap.innerHTML = '';
   for (const type of TOWER_ORDER) {
+    if (banned(type)) continue;
     const def = TOWERS[type];
     const b = document.createElement('button');
     b.className = 'slot' + (type === S.selectedType ? ' selected' : '');
@@ -2118,7 +2163,7 @@ function newRun(levelIndex, diff) {
   S.lives = d.lives;
   S.maxLives = d.lives;
   S.shakeUntil = 0; S.shakeMag = 0; S.leakUntil = 0;
-  S.wager = []; S.wagerLive = [];
+  S.wager = []; S.wagerLive = []; S.roadTurn = -1;
   S.score = 0;
   S.wave = 0;
   S.phase = 'ready';
@@ -2126,7 +2171,7 @@ function newRun(levelIndex, diff) {
   S.queue = [];
   S.towers = []; S.enemies = []; S.shots = []; S.fx = []; S.corpses = [];
   S.openTower = null;
-  S.selectedType = 'fire';
+  S.selectedType = TOWER_ORDER.find(t => !(LEVELS[levelIndex].ban || []).includes(t)) || 'fire';
   S.speed = 1;
   S.time = 0;
   S.dirty = true;
@@ -2311,6 +2356,7 @@ function tapBoard(clientX, clientY) {
   }
   if (pick < 0) return;
 
+  if (banned(S.selectedType)) return;
   const def = TOWERS[S.selectedType];
   if (S.energy < def.cost) { toast('NOT ENOUGH ENERGY'); return; }
   S.energy -= def.cost;
