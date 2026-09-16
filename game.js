@@ -1,4 +1,4 @@
-/* Island Defence — map 1.
+/* Last Isle: Tower Defense — the game.
  *
  * One map, played to a finish: fifteen waves, a win screen, a real economy.
  *
@@ -543,6 +543,10 @@ const UNLOCK_ORDER = ['quartermaster', 'training', 'surveyor', 'gambler'];
 
 function owns(id) { return !!(save.unlocks && save.unlocks[id]); }
 
+// Deliberately still says islanddefence: the game was renamed, the key was
+// not. Changing it would orphan every save on every device that has played —
+// the stars, the gems and the unlocks all hang off this string. It is internal
+// and nobody sees it.
 const SAVE_KEY = 'islanddefence.v2';
 const save = Object.assign(
   // stars: { levelId: 0-3 }. A level is unlocked once the one before it has
