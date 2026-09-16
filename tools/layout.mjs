@@ -26,6 +26,7 @@ const SIZES = [
   ['tablet',    1024, 768], ['desktop',   1440, 900],
 ];
 const IDS = ['stats','waveStack','rightControls','bottomBar','banner'];
+const TRAY_IDS = ['abilityBar','towerSlots','startWave','trayLabel'];
 let bad = 0;
 for (const [name, width, height] of SIZES) {
   const page = await b.newPage({ viewport: { width, height } });
@@ -84,6 +85,24 @@ for (const [name, width, height] of SIZES) {
 
     return { hits, off, pv, board, gapBelow, gapAbove, coverFrac };
   }, IDS);
+
+  // Inside the tray: abilities, tower slots and the start button share one bar.
+  const trayHits = await page.evaluate((ids)=>{
+    const box={};
+    for (const id of ids){ const e=document.getElementById(id); if(!e) continue;
+      const b=e.getBoundingClientRect();
+      if (b.width===0||b.height===0) continue;
+      box[id]={l:b.left,t:b.top,r:b.right,b:b.bottom}; }
+    const hits=[]; const k=Object.keys(box);
+    for(let i=0;i<k.length;i++) for(let j=i+1;j<k.length;j++){
+      const A=box[k[i]],B=box[k[j]];
+      // trayLabel is a tab that deliberately sits over the bar's top edge.
+      if (k[i]==='trayLabel'||k[j]==='trayLabel') continue;
+      if(!(A.r<=B.l||A.l>=B.r||A.b<=B.t||A.t>=B.b)) hits.push(`${k[i]}/${k[j]}`);
+    }
+    return hits;
+  }, TRAY_IDS);
+  r.hits = r.hits.concat(trayHits);
   const holes = [];
   if (r.gapBelow > 60) holes.push(`${r.gapBelow}px dead below board`);
   if (r.gapAbove > 60) holes.push(`${r.gapAbove}px dead above board`);

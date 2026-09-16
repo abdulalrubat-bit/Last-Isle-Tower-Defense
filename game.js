@@ -449,6 +449,122 @@ const WAGERS = {
 };
 const WAGER_ORDER = ['swift', 'hardened', 'horde'];
 
+// ------------------------------------------------------------- abilities ---
+//
+// The recovery step. Until now a wave breaking through was something to watch:
+// you could build or upgrade, both of which take effect too slowly to save a
+// leak already in progress, and then you counted the lives going down. Control
+// and pressure and panic, and no fourth beat.
+//
+// These are the fourth beat. Cooldowns rather than costs, deliberately — an
+// emergency button you cannot afford when you are losing is not an emergency
+// button, and tying them to energy would mean the player most in trouble has
+// the least access to the thing that rescues them. What they cost is TIME, so
+// the decision is never "can I afford this" but "is this the moment, or does
+// something worse arrive in thirty seconds".
+//
+// The simulation's builds use none of them, so the balance table keeps
+// measuring the game without them and an ability can only ever be a lifeline
+// the player reaches for, never a tax the numbers assume.
+const ABILITIES = {
+  strike: { name:'STRIKE', cool:42000, colour:'#ff8a3c', aim:true,
+            radius:210, dmg:16, blurb:'Call a shell down anywhere on the road.' },
+  freeze: { name:'FREEZE', cool:58000, colour:'#7fe4ff',
+            hold:2600, factor:0.12,
+            blurb:'Everything on the board stops, immune or not.' },
+  surge:  { name:'SURGE',  cool:74000, colour:'#ffd84d',
+            hold:7000, rate:0.45,
+            blurb:'Every tower fires twice as fast.' },
+};
+const ABILITY_ORDER = ['strike', 'freeze', 'surge'];
+
+function abilityReady(id) {
+  return S.screen === 'play' && S.phase !== 'done' && (S.abilityAt[id] || 0) <= S.time;
+}
+
+// How far through the cooldown, 0 (just used) to 1 (ready). Drives the sweep
+// on the button, which is the only thing telling a player when the lifeline
+// comes back.
+function abilityCharge(id) {
+  const a = ABILITIES[id];
+  const left = (S.abilityAt[id] || 0) - S.time;
+  if (left <= 0) return 1;
+  return Math.max(0, Math.min(1, 1 - left / a.cool));
+}
+
+function useAbility(id) {
+  if (!abilityReady(id)) return false;
+  const a = ABILITIES[id];
+
+  // STRIKE needs a point, so it arms rather than fires. The next tap on the
+  // board spends it; tapping the button again backs out without burning it.
+  if (a.aim) {
+    S.aiming = S.aiming === id ? null : id;
+    S.aimAt = null;
+    S.dirty = true;
+    sfx(S.aiming ? 'build' : 'sell');
+    return true;
+  }
+  fireAbility(id);
+  return true;
+}
+
+function fireAbility(id, x, y) {
+  const a = ABILITIES[id];
+  S.abilityAt[id] = S.time + a.cool;
+  S.aiming = null;
+  S.dirty = true;
+
+  if (id === 'strike') {
+    // Lands after a beat rather than instantly: the delay is what makes it
+    // readable as a shell rather than a click, and it lets a player lead a
+    // group that is still moving.
+    S.fx.push({ kind:'mark', x, y, r:a.radius, ttl:620, life:620 });
+    S.pending.push({ id, x, y, at: S.time + 620 });
+    sfx('shoot');
+    return;
+  }
+
+  if (id === 'freeze') {
+    for (const e of S.enemies) {
+      if (e.hp <= 0) continue;
+      // Pierces slow-immunity on purpose. A wisp roster would otherwise be
+      // the one case where the panic button does nothing.
+      applySlow(e, { slow:a.factor, slowFor:a.hold, pierceSlowImmune:a.factor });
+    }
+    S.flashUntil = S.time + 260;
+    shake(6, 200);
+    sfx('hit');
+    return;
+  }
+
+  if (id === 'surge') {
+    S.surgeUntil = S.time + a.hold;
+    // Every tower's next shot comes immediately, so the effect is visible on
+    // the frame it is pressed rather than one reload later.
+    for (const t of S.towers) t.cool = 0;
+    shake(5, 180);
+    sfx('win');
+  }
+}
+
+// Delayed ability effects, resolved in the update loop.
+function resolvePending() {
+  if (!S.pending.length) return;
+  for (let i = S.pending.length - 1; i >= 0; i--) {
+    const p = S.pending[i];
+    if (S.time < p.at) continue;
+    S.pending.splice(i, 1);
+    const a = ABILITIES[p.id];
+    // Ignores armour: the point of artillery is that it answers the thing
+    // nothing else can, and the player has one every forty seconds.
+    const hp = 66 + S.wave * 30;
+    splash(p.x, p.y, a.radius, hp * a.dmg / 10, null, null);
+    shake(18, 320);
+    sfx('leak');
+  }
+}
+
 // Wagers multiply together rather than being picked one at a time, because
 // DOUBLE OR NOTHING lets two run at once: two risks stacked, two payouts
 // multiplied. One slot without it, two with.
@@ -505,6 +621,8 @@ const S = {
   restLeft: 0,
   maxLives: 0, bossCalled: false,
   wager: [], wagerLive: [], summonBudget: 0, roadTurn: -1,
+  abilityAt: {}, aiming: null, aimAt: null, pending: [],
+  surgeUntil: 0, flashUntil: 0,
   shakeUntil: 0, shakeMag: 0, leakUntil: 0,
   queue: [],             // enemy kinds still to spawn this wave
   spawnIn: 0,
@@ -836,6 +954,7 @@ function placeBands(vw, vh) {
   root.setProperty('--board-top', oy + 'px');
   root.setProperty('--board-bottom', (vh - oy - boardH) + 'px');
   root.setProperty('--tray-top', (oy + boardH + 8) + 'px');
+  root.setProperty('--tray-bottom', (oy + boardH + 8 + trayH) + 'px');
 }
 
 function toMap(clientX, clientY) {
@@ -964,6 +1083,43 @@ function threatsOf(n) {
 
 // Three chips, one selectable, cleared by tapping the one that is on. Only up
 // during the rest between waves: a bet on a wave already running is not a bet.
+// Built once; only the sweep and the ready class change after that, because
+// this redraws every frame and rebuilding three buttons at 60fps to move a
+// gradient would be silly.
+function buildAbilities() {
+  const bar = el('abilityBar');
+  bar.innerHTML = '';
+  for (const id of ABILITY_ORDER) {
+    const a = ABILITIES[id];
+    const b = document.createElement('button');
+    b.className = 'abil';
+    b.dataset.id = id;
+    b.style.setProperty('--c', a.colour);
+    b.title = a.name + ' — ' + a.blurb;
+    b.setAttribute('aria-label', a.name + '. ' + a.blurb);
+    b.innerHTML = `<span class="sweep"></span><span class="n">${a.name}</span>` +
+                  `<span class="k"></span>`;
+    b.addEventListener('click', () => { audio(); useAbility(id); syncAbilities(); });
+    bar.appendChild(b);
+  }
+}
+
+// Ticks every frame alongside the wave countdown.
+function syncAbilities() {
+  const bar = el('abilityBar');
+  if (!bar.children.length) return;
+  for (const b of bar.children) {
+    const id = b.dataset.id;
+    const p = abilityCharge(id);
+    const ready = abilityReady(id);
+    b.classList.toggle('ready', ready);
+    b.classList.toggle('arm', S.aiming === id);
+    b.querySelector('.sweep').style.setProperty('--p', p.toFixed(3));
+    const left = Math.ceil(((S.abilityAt[id] || 0) - S.time) / 1000);
+    b.querySelector('.k').textContent = ready ? '\u25cf' : left;
+  }
+}
+
 function renderWagers() {
   const bar = el('wagerBar');
   const on = S.phase === 'ready' && S.wave + 1 <= WAVES.length;
@@ -1418,6 +1574,7 @@ function update(dt) {
     if (!S.queue.length) S.phase = 'clearing';
   }
 
+  resolvePending();
   updateSupport(dt);
 
   // One polyline lookup per enemy per frame; everything downstream reads the
@@ -1491,7 +1648,7 @@ function update(dt) {
       x: t.x, y: t.y - 40, target, from: t,
       speed: def.shot, dmg: towerDamage(t), type: t.type,
     });
-    t.cool = towerRate(t);
+    t.cool = towerRate(t) * (S.time < S.surgeUntil ? ABILITIES.surge.rate : 1);
     sfx('shoot');
   }
 
@@ -1588,7 +1745,33 @@ function render() {
   drawShots();
   drawFx();
 
+  // Aiming reticle, in map space, so it tracks the board rather than the
+  // screen. Drawn last inside the transform so nothing covers it.
+  if (S.aiming && S.aimAt) {
+    const a = ABILITIES[S.aiming];
+    ctx.globalAlpha = 0.55 + 0.2 * Math.sin(S.time / 120);
+    ctx.strokeStyle = a.colour;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(S.aimAt.x, S.aimAt.y, a.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(S.aimAt.x - 26, S.aimAt.y); ctx.lineTo(S.aimAt.x + 26, S.aimAt.y);
+    ctx.moveTo(S.aimAt.x, S.aimAt.y - 26); ctx.lineTo(S.aimAt.x, S.aimAt.y + 26);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
   ctx.restore();
+
+  // A white wash on the frame the board freezes. Outside the transform so it
+  // covers the screen rather than the map.
+  if (S.time < S.flashUntil) {
+    ctx.globalAlpha = 0.55 * ((S.flashUntil - S.time) / 260);
+    ctx.fillStyle = '#dff6ff';
+    ctx.fillRect(0, 0, vw, vh);
+    ctx.globalAlpha = 1;
+  }
   drawDanger(vw, vh);
 }
 
@@ -1689,6 +1872,15 @@ function drawTowers() {
       ctx.stroke();
     }
     drawSpecMark(t);
+    if (S.time < S.surgeUntil) {
+      ctx.save();
+      ctx.globalAlpha = 0.30 + 0.22 * Math.sin(S.time / 90);
+      ctx.fillStyle = '#ffd84d';
+      ctx.beginPath();
+      ctx.arc(t.x, t.y - 26, 54, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
     const art = TOWER_IMG && typeof TOWER_ATLAS !== 'undefined'
       && TOWER_ATLAS[t.type] && TOWER_ATLAS[t.type].tiers[towerTier(t)];
     if (art) {
@@ -1930,6 +2122,19 @@ function drawFx() {
         ctx.arc(f.x, f.y, f.r * (1.15 - k * 0.55), 0, Math.PI * 2);
         ctx.stroke();
       }
+    } else if (f.kind === 'mark') {
+      // The shell is in the air. A ring that closes on the target so the
+      // player can see both WHERE it lands and ROUGHLY WHEN.
+      ctx.globalAlpha = 0.85;
+      ctx.strokeStyle = '#ff8a3c';
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.r * (0.35 + 0.9 * k), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 0.30;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+      ctx.stroke();
     } else if (f.kind === 'spark') {
       const spec = FX_IMG && typeof FX_ATLAS !== 'undefined' && FX_ATLAS.spark;
       const sheet = FX_SPARK[f.type];
@@ -2052,6 +2257,7 @@ function syncHud() {
 // The countdown ticks every frame, so it is written separately from the
 // change-driven HUD above.
 function syncWaveState() {
+  syncAbilities();
   const st = el('waveState');
   if (S.phase === 'ready' && S.wave === 0) st.textContent = 'TAP START';
   else if (S.phase === 'ready') st.textContent = 'NEXT IN ' + Math.ceil(S.restLeft / 1000) + 's';
@@ -2217,6 +2423,8 @@ function newRun(levelIndex, diff) {
   S.maxLives = d.lives;
   S.shakeUntil = 0; S.shakeMag = 0; S.leakUntil = 0;
   S.wager = []; S.wagerLive = []; S.roadTurn = -1;
+  S.abilityAt = {}; S.aiming = null; S.aimAt = null; S.pending = [];
+  S.surgeUntil = 0; S.flashUntil = 0;
   S.score = 0;
   S.wave = 0;
   S.phase = 'ready';
@@ -2231,6 +2439,7 @@ function newRun(levelIndex, diff) {
   S.screen = 'play';
   S.running = true;
   buildSlots();
+  buildAbilities();
   updateSpeedButton();
   hud.classList.remove('hide');
   show('menu', false);
@@ -2397,6 +2606,14 @@ function tapBoard(clientX, clientY) {
   if (S.screen !== 'play' || !S.running) return;
   const p = toMap(clientX, clientY);
 
+  // While an ability is armed the board is a targeting surface, not a build
+  // surface. Checked before anything else so an emergency strike can never be
+  // swallowed by a pad that happened to be under the finger.
+  if (S.aiming) {
+    fireAbility(S.aiming, p.x, p.y);
+    return;
+  }
+
   const hit = S.towers.find(t => Math.hypot(p.x - t.x, p.y - t.y) < 74);
   if (hit) { openUpgrade(hit); return; }
 
@@ -2429,6 +2646,16 @@ canvas.addEventListener('pointerdown', e => {
   audio();                       // first gesture unlocks WebAudio
   tapBoard(e.clientX, e.clientY);
 }, { passive: false });
+
+// The aiming reticle follows a mouse, which a phone does not have. On touch
+// there is nothing to preview before the tap lands, so the shell's own closing
+// ring is the feedback instead — and the reticle simply never appears, rather
+// than sitting frozen wherever the last tap was.
+canvas.addEventListener('pointermove', e => {
+  if (!S.aiming || e.pointerType !== 'mouse') return;
+  S.aimAt = toMap(e.clientX, e.clientY);
+}, { passive: true });
+canvas.addEventListener('pointerleave', () => { S.aimAt = null; }, { passive: true });
 
 el('pause').addEventListener('click', () => {
   if (S.phase === 'done' || S.openTower) return;

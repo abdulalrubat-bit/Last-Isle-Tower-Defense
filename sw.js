@@ -7,7 +7,7 @@
  * by hand it is a key someone forgets to bump, and a forgotten bump strands a
  * player on an old build with no way to know it.
  */
-const VERSION = 'c5b30296b4b5';
+const VERSION = 'b589a7a207fb';
 const CACHE = 'islanddefence-' + VERSION;
 
 const SHELL = [
