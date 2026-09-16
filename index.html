@@ -274,6 +274,59 @@
     max-width:100%;opacity:0;transition:opacity .18s;pointer-events:none}
   #wagerBar.show{opacity:1;pointer-events:auto}
   #wagerBar:empty{display:none}
+
+  /* ---- portrait -----------------------------------------------------------
+     A phone held upright cannot show a 16:9 board at any useful size, so the
+     board is a band and the HUD sits above it rather than over it. These rules
+     place the three bands from the measurements placeBands() publishes, so the
+     HUD always touches the top of the board and the tray always touches the
+     bottom of it, whatever height the next-wave panel happens to be. */
+  /* The pause and speed buttons get a reserved column on the right, and both
+     the stats box and the wave stack are bounded by it rather than being
+     centred on the viewport and hoping. Centring is what put the pause button
+     on top of LIVES, and then put the wave stack under it as well. */
+  /* Pause and speed sit side by side in portrait rather than stacked. As a
+     column they were tall enough to reach down past the stats box, which
+     forced the wave stack to keep clear of the right edge for its whole
+     height and left it visibly off-centre against the board. As a row they
+     end above the stack, which can then span the full width and centre. */
+  body.portrait{--ctrl-col:140px}
+  body.portrait #rightControls{flex-direction:row;gap:7px;align-items:flex-start}
+  body.portrait #stats{left:8px;transform:none;top:var(--hud-top,8px);
+    width:auto;right:var(--ctrl-col);max-width:none;min-width:0}
+  body.portrait #waveStack{top:calc(var(--hud-top,8px) + 88px);
+    left:8px;right:8px;transform:none;max-width:none;align-items:center}
+  body.portrait #rightControls{top:var(--hud-top,8px);right:8px}
+  body.portrait #bottomBar{top:var(--tray-top,auto);bottom:auto}
+  /* Over the board's own top edge, where there is contrast, rather than adrift
+     on the background above it. */
+  body.portrait #banner{top:calc(var(--board-top,50%) + 26px);transform:translate(-50%,0) scale(1)}
+  body.portrait #banner.show{transform:translate(-50%,0) scale(1)}
+  body.portrait #toast{bottom:auto;top:calc(var(--board-top,0px) - 30px)}
+
+  /* The next-wave panel goes horizontal in portrait too. Stacked it was 220px
+     tall on a 232px board, which is the single biggest reason the screen had
+     no room left for anything. */
+  body.portrait #wavePreview{display:flex;align-items:center;gap:8px;
+    flex-wrap:wrap;justify-content:center;padding:4px 10px 5px}
+  body.portrait #previewHdr{white-space:nowrap}
+  body.portrait #previewRoster{margin-top:0}
+  body.portrait #previewThreats{margin-top:0}
+  body.portrait #previewBoss{margin-top:0;white-space:nowrap}
+
+  /* The wager chips wrapped into SWIFT alone on one line with HARDENED and
+     HORDE beneath it, reading as three loose buttons rather than a row of
+     three choices. They shrink to fit one line instead. */
+  #wagerBar{flex-wrap:nowrap;align-items:stretch}
+  .wager{flex:1 1 0;min-width:0;padding:3px 4px 4px}
+  .wager .n,.wager .r,.wager .p{white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
+  #wagerHint{flex:0 0 auto}
+  @media(max-width:520px){
+    #wagerHint{display:none}
+    .wager .n{font-size:9px}
+    .wager .r,.wager .p{font-size:7.5px}
+  }
   .wager.full{opacity:.4}
 
   /* Workshop. Gems were a number that went up and bought nothing; this is

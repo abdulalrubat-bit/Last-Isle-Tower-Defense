@@ -787,9 +787,52 @@ function resize() {
   scale = Math.min(vw / MAP_W, vh / MAP_H);
   ox = (vw - MAP_W * scale) / 2;
   oy = (vh - MAP_H * scale) / 2;
+  placeBands(vw, vh);
 }
 addEventListener('resize', resize);
 if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+
+// The map is 16:9 and a phone held upright is not, so in portrait the board
+// can only ever be a band across the middle — 27% of the screen on a 412x870
+// device. That part is unavoidable without cropping the road, and cropping the
+// road is not an option when the road IS the level.
+//
+// What IS avoidable is where the leftover space goes. Anchoring the HUD to the
+// top of the viewport and the tower tray to the bottom left 234px of dead
+// green trapped BETWEEN the board and the tray, which is what made the screen
+// read as broken rather than as letterboxed: three widgets adrift at the top,
+// a strip of game, then nothing.
+//
+// So the three bands are treated as one block — HUD, board, tray, touching —
+// and that block is centred. The dead space ends up outside it, split top and
+// bottom, where it reads as a frame instead of a gap. Landscape keeps the HUD
+// overlaying the board, which is what it is designed for and where it works.
+function placeBands(vw, vh) {
+  const portrait = vh > vw;
+  document.body.classList.toggle('portrait', portrait);
+  const root = document.documentElement.style;
+  const boardH = MAP_H * scale;
+
+  if (!portrait) {
+    root.setProperty('--board-top', oy + 'px');
+    root.setProperty('--board-bottom', (vh - oy - boardH) + 'px');
+    return;
+  }
+
+  // Measured rather than assumed: the HUD's height depends on how many kinds
+  // are in the next wave and whether a wager row is up.
+  const stats = el('stats'), stack = el('waveStack'), tray = el('bottomBar');
+  const hudH = Math.max(stats.offsetHeight, 0) + 6 + Math.max(stack.offsetHeight, 0);
+  const trayH = Math.max(tray.offsetHeight, 0);
+  const blockH = hudH + boardH + trayH + 16;
+  const top = Math.max(4, (vh - blockH) / 2);
+
+  oy = top + hudH + 8;
+  root.setProperty('--hud-top', top + 'px');
+  root.setProperty('--board-top', oy + 'px');
+  root.setProperty('--board-bottom', (vh - oy - boardH) + 'px');
+  root.setProperty('--tray-top', (oy + boardH + 8) + 'px');
+}
 
 function toMap(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
@@ -1994,6 +2037,12 @@ function syncHud() {
   const canStart = S.phase === 'ready' && S.wave < WAVES.length;
   el('startWave').disabled = !canStart;
   renderPreview();
+  // The panel above just changed height, and in portrait the board's position
+  // is measured from it.
+  if (document.body.classList.contains('portrait')) {
+    const vv = window.visualViewport;
+    placeBands(vv ? vv.width : innerWidth, vv ? vv.height : innerHeight);
+  }
 }
 
 // The countdown ticks every frame, so it is written separately from the

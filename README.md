@@ -315,10 +315,35 @@ is muted. The first version warned on every wave the threat applied to, which
 was correct and useless — a siege level showed ARMOUR fifteen times out of
 fifteen. A signal that is always on is wallpaper.
 
-`node tools/layout.mjs` checks every HUD box against every other at six
-viewports and exits non-zero on an overlap. It exists because the wave counter
-shipped drawn *on top of* the stats box on a portrait phone, and no unit test
-would have caught that.
+`node tools/layout.mjs` checks the HUD at six viewports and exits non-zero on a
+fault. It exists because the wave counter shipped drawn *on top of* the stats
+box on a portrait phone, and no unit test would have caught that.
+
+It checks four things, and the last three were added after it passed a phone
+that was visibly broken:
+
+- **Box against box** — no two HUD panels overlap.
+- **Box against the BOARD.** The canvas fills the window; the board is
+  letterboxed inside it. Every widget can be clear of every other widget while
+  the actual playfield is 27% of the screen with the HUD adrift above it, which
+  is exactly what shipped.
+- **Dead space trapped between bands.** Anchoring the HUD to the top of the
+  viewport and the tray to the bottom left 234px of nothing *between* the board
+  and the tray. Space outside the group is a frame; space inside it is a hole.
+- **HUD coverage of a letterboxed board.** Only when the board does not fill
+  the screen — in landscape the HUD overlaying the board is the design.
+
+### Portrait
+
+The map is 16:9 and a phone held upright is not, so the board can only be a
+band across the middle and the letterboxing is unavoidable: cropping is not an
+option when the road *is* the level. What matters is that the HUD, the board
+and the tower tray are placed as one block and centred together, which
+`placeBands()` does by measuring the HUD rather than assuming its height — the
+next-wave panel changes size with the wave.
+
+The Android app sets `screenOrientation="sensorLandscape"`, so this only
+affects the browser and the installed PWA.
 
 ## Where the terrain comes from
 
