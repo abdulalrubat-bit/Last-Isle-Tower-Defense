@@ -275,6 +275,57 @@
   #wagerBar.show{opacity:1;pointer-events:auto}
   #wagerBar:empty{display:none}
 
+  /* Abilities live in the tray's empty left end, where nothing was, and where
+     a thumb already is during a wave. The cooldown is a conic sweep rather
+     than a number: what matters mid-panic is "is it back yet", which is a
+     glance, not a read. */
+  /* Three zones in the tray: abilities left, towers centre, start right. The
+     tower slots used to span nearly the whole bar and already overlapped the
+     start button by ten pixels before any of this existed — the tray was never
+     checked, only the HUD boxes around it. */
+  #bottomBar{--abil-w:186px;--start-w:112px}
+  #abilityBar{position:absolute;left:10px;top:50%;transform:translateY(-50%);
+    width:var(--abil-w);display:flex;gap:6px;z-index:3;pointer-events:auto}
+  .abil{position:relative;width:54px;height:54px;border-radius:50%;
+    border:3px solid #4a3a1c;background:#1d120b;padding:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    box-shadow:0 3px 8px #000a;overflow:hidden}
+  .abil .n{font:900 9px Arial;letter-spacing:.5px;line-height:1;z-index:2;
+    text-shadow:1px 1px 2px #000}
+  .abil .k{font:900 12px Arial;z-index:2;margin-top:2px;color:#fff;
+    text-shadow:1px 1px 2px #000}
+  /* The unfilled part of the sweep, so a cooling ability reads as a dial
+     filling rather than as a disabled button. */
+  .abil .sweep{position:absolute;inset:0;border-radius:50%;z-index:1;
+    background:conic-gradient(var(--c) calc(var(--p) * 360deg),
+                              rgba(0,0,0,.72) 0)}
+  .abil.ready{border-color:var(--c)}
+  .abil.ready .n{color:var(--c)}
+  .abil:not(.ready){opacity:.85}
+  .abil:not(.ready) .n{color:#8b7f63}
+  .abil.arm{border-color:#fff;animation:armPulse .7s ease-in-out infinite}
+  @keyframes armPulse{0%,100%{box-shadow:0 0 0 0 #fff8}50%{box-shadow:0 0 0 7px #fff0}}
+  .abil.ready:active{transform:scale(.93)}
+  /* On a phone the tray cannot hold all three zones: four towers, a start
+     button and three abilities across 400px leaves 32px tap targets. Portrait
+     has dead space BELOW the tray, so the abilities move there and get bigger
+     rather than smaller. */
+  body.portrait #bottomBar{--abil-w:0px;--start-w:96px}
+  body.portrait #abilityBar{position:fixed;left:50%;top:calc(var(--tray-bottom,100%) + 10px);
+    transform:translateX(-50%);width:auto;gap:14px;z-index:11}
+  body.portrait .abil{width:58px;height:58px}
+  @media(max-width:760px){
+    #bottomBar{--abil-w:146px;--start-w:92px}
+    #abilityBar{left:6px;gap:4px}
+    .abil{width:44px;height:44px;border-width:2px}
+    .abil .n{font-size:7.5px}
+    .abil .k{font-size:10px}
+    body.portrait .abil{width:56px;height:56px;border-width:3px}
+    body.portrait .abil .n{font-size:8.5px}
+    body.portrait .abil .k{font-size:11px}
+  }
+  @media(prefers-reduced-motion:reduce){ .abil.arm{animation:none} }
+
   /* ---- portrait -----------------------------------------------------------
      A phone held upright cannot show a 16:9 board at any useful size, so the
      board is a band and the HUD sits above it rather than over it. These rules
@@ -414,7 +465,8 @@
     z-index:2;white-space:nowrap}
   /* Centred, not left-packed: four slots in a full-width tray left a long
      empty plank with the TOWERS label floating over nothing. */
-  #towerSlots{position:absolute;left:1.5%;right:16%;top:8%;height:84%;
+  #towerSlots{position:absolute;left:calc(var(--abil-w) + 20px);
+    right:var(--start-w);top:8%;height:84%;
     display:flex;gap:10px;align-items:center;justify-content:center}
   .slot{pointer-events:auto;position:relative;flex:1;height:100%;max-width:118px;
     border:3px solid #bbb;border-radius:16px;padding:2px;
@@ -487,7 +539,7 @@
     #pause{width:50px;height:50px;font-size:21px;border-radius:14px}
     #callWave{width:66px;height:66px}
     #bottomBar{height:80px;bottom:5px;left:6px;right:6px}
-    #towerSlots{gap:5px;right:17%}
+    #towerSlots{gap:5px}
     .slot{max-width:74px;border-radius:13px}
     .slot .cost{font-size:11px;min-width:30px}
     #toast{bottom:15vh;font-size:11px}
@@ -563,6 +615,7 @@
   </div>
   <div id="bottomBar">
     <img class="bg" src="assets/tray.png" alt="">
+    <div id="abilityBar"></div>
     <div id="trayLabel">TOWERS</div>
     <div id="towerSlots"></div>
     <button id="startWave" aria-label="Start next wave">

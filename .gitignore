@@ -2,3 +2,4 @@
 # is a dev dependency of the tooling and not of the game. The game itself ships
 # no npm packages — index.html loads plain scripts.
 node_modules/
+node_modules/

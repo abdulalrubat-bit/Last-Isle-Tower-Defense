@@ -200,6 +200,45 @@ Three things to know before adding another:
   on hard where the campaign runs 1 to 4 of 9; correcting to 1.25 walled it on
   *easy* at 2 of 27. It sits at 0.82. Bisect, and re-run with `--runs 3`.
 
+## Abilities
+
+The recovery step. Until these existed, a wave breaking through was something
+to watch: building and upgrading both take effect too slowly to save a leak
+already in progress, so the loop ran control → pressure → panic and then
+stopped. These are the fourth beat.
+
+| ability | does | cooldown |
+|---|---|---|
+| **STRIKE** | a shell anywhere on the road — wide, heavy, straight through armour | 42s |
+| **FREEZE** | everything on the board stops, slow-immune kinds included | 58s |
+| **SURGE** | every tower fires at roughly double rate for seven seconds | 74s |
+
+**Cooldowns, not costs, deliberately.** An emergency button you cannot afford
+when you are losing is not an emergency button — pricing them in energy would
+give the player in the most trouble the least access to the thing that rescues
+them. What they cost is time, so the decision is never "can I afford this" but
+"is this the moment, or does something worse arrive in thirty seconds".
+
+STRIKE arms rather than fires: the next tap on the board spends it, and tapping
+the button again backs out without burning the cooldown. While it is armed the
+board is a targeting surface and the aiming check runs before the build check,
+so an emergency strike can never be swallowed by a pad that happened to be
+under the finger. The reticle follows a mouse only — a phone has nothing to
+preview before the tap lands, so the shell's own closing ring is the feedback
+there.
+
+FREEZE pierces slow-immunity on purpose. Without that, a wisp roster would be
+the one case where the panic button does nothing.
+
+The simulation's builds use none of them, so the balance table keeps measuring
+the game without them and an ability can only ever be a lifeline the player
+reaches for, never a tax the numbers assume.
+
+`node tools/abilities.mjs` benches each one. Watch the SURGE line in
+particular: measured by damage over a fixed window, not by counting the shots
+array, because a shot added on the same frame another lands leaves that array's
+length unchanged and a faster tower reads as *fewer* shots.
+
 ## Wagers
 
 A bet on the next wave, taken during the rest and spent the moment it starts.
