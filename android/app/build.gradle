@@ -1,0 +1,63 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Signing comes from environment, never from a file in the repository. CI
+// decodes the keystore from a secret into app/release.keystore before it
+// builds; locally you can export the same four variables. With none of them
+// set the release build is simply left unsigned, which still produces a
+// verifiable artifact and keeps the workflow useful before a key exists.
+def keystoreFile = rootProject.file('app/release.keystore')
+def hasSigning = keystoreFile.exists() && System.getenv('KEYSTORE_PASSWORD')
+
+android {
+    namespace 'com.fatefulgames.lastisle'
+    compileSdk 35
+
+    defaultConfig {
+        // CHANGE THIS if your Play account already uses a different prefix —
+        // an applicationId cannot be altered after the first upload.
+        applicationId "com.fatefulgames.lastisle"
+        minSdk 21
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+
+        // The one piece of configuration that matters. Everything the app does
+        // is load this URL; the game itself ships from the Pages site, so an
+        // update is a push to this repository and not a new Play release.
+        resValue "string", "launch_url", "https://abdulalrubat-bit.github.io/Last-Isle-Tower-Defense/"
+        resValue "string", "host_name", "abdulalrubat-bit.github.io"
+    }
+
+    if (hasSigning) {
+        signingConfigs {
+            release {
+                storeFile keystoreFile
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (hasSigning) signingConfig signingConfigs.release
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // The entire app. androidbrowserhelper provides the launcher activity that
+    // opens the URL in a Trusted Web Activity — Chrome, full screen, no URL
+    // bar, sharing the browser's storage so the save file survives.
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+}

@@ -1,0 +1,9 @@
+# The signing key must never be committed. CI writes it here from a secret for
+# the length of a job.
+app/release.keystore
+*.keystore
+*.jks
+
+.gradle/
+build/
+local.properties

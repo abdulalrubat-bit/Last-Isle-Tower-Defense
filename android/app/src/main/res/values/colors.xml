@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The game's own background, so the splash and the system bars do not
+         flash a different colour on the way in. Matches background_color in
+         app.webmanifest. -->
+    <color name="backgroundColor">#1d2a16</color>
+</resources>

@@ -1,0 +1,6 @@
+// Root build file. The whole Android project exists to wrap ONE URL, so there
+// is deliberately very little here — see app/build.gradle and the note at the
+// top of android/README.md for why this is a TWA and not a port.
+plugins {
+    id 'com.android.application' version '8.6.1' apply false
+}

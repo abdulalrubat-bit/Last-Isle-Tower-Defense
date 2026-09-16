@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Last Isle</string>
+
+    <!-- Declares which web origin this app claims. The matching half lives at
+         https://abdulalrubat-bit.github.io/.well-known/assetlinks.json and
+         carries this app's signing fingerprint. Both halves must agree or the
+         TWA shows a URL bar. -->
+    <string name="asset_statements" translatable="false">
+        [{
+          \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+          \"target\": {
+            \"namespace\": \"web\",
+            \"site\": \"https://abdulalrubat-bit.github.io\"
+          }
+        }]
+    </string>
+</resources>

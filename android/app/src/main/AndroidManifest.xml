@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A Trusted Web Activity. There is no Java in this project: LauncherActivity
+  comes from androidbrowserhelper and its whole job is to open DEFAULT_URL in
+  Chrome with the browser chrome hidden.
+
+  Kept deliberately minimal. A splash IMAGE was in the first draft and is not
+  here, because it needs a FileProvider declaration to hand the bitmap to
+  Chrome, and a half-configured splash is a crash on launch. The background
+  colour alone stops the white flash, which was the actual problem.
+
+  The URL bar only disappears if Digital Asset Links verify, which needs
+  /.well-known/assetlinks.json at the site root carrying the SHA-256 of the
+  key this app was signed with. Until those match the app still runs, but
+  shows the address — the usual reason a TWA "looks wrong".
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.App">
+
+        <meta-data
+            android:name="asset_statements"
+            android:resource="@string/asset_statements" />
+
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout">
+
+            <meta-data
+                android:name="android.support.customtabs.trusted.DEFAULT_URL"
+                android:value="@string/launch_url" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
+                android:resource="@color/backgroundColor" />
+            <meta-data
+                android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
+                android:resource="@color/backgroundColor" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Lets a link to the game open the installed app rather than the
+                 browser, once asset links verify. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="@string/host_name"
+                    android:pathPrefix="/Last-Isle-Tower-Defense" />
+            </intent-filter>
+        </activity>
+
+        <!-- Runs the game in a plain WebView when no installed browser can host
+             a Trusted Web Activity, so the app launches on every device rather
+             than only on ones with a current Chrome. -->
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.WebViewFallbackActivity"
+            android:configChanges="orientation|screenSize"
+            android:exported="false" />
+
+        <service
+            android:name="com.google.androidbrowserhelper.trusted.DelegationService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.support.customtabs.trusted.TRUSTED_WEB_ACTIVITY_SERVICE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>
